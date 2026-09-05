@@ -7,9 +7,9 @@ A native Mac app that predicts chunks of your next prompt using a selected Codex
 1. Open **Prompt Companion.app** next to this source folder.
 2. Click the task you are working on. The task stays selected until you change it using the context button at the top.
 3. Type in **Your prompt**, or choose a suggested starting phrase. Click a phrase to insert it. Continue typing or choosing phrases.
-4. Click **Copy Prompt**, then paste into Codex using your usual paste method. Nothing is submitted automatically.
+4. Click **Copy Prompt**. After a successful copy, the draft clears and focus returns to the writing area. Paste into Codex using your usual paste method. Nothing is submitted automatically. If copying fails, your draft stays intact.
 
-**Undo** reverses the most recent edit, including a phrase insertion or Clear. Drafts are saved separately for each task and restored after reopening. A short trailing space is added when appropriate so you can continue typing immediately.
+**Undo** reverses the most recent edit, including a phrase insertion, Clear, or the clearing after Copy Prompt. Undoing a copy restores your draft without changing the clipboard. Drafts are saved separately for each task and restored after reopening. A short trailing space is added when appropriate so you can continue typing immediately.
 
 The settings button adjusts text size and phrase-button height, pauses automatic suggestions, and controls whether the window stays on top. Session counters show typed and inserted characters and selected phrases. These are activity counts, not a measured claim about effort saved.
 

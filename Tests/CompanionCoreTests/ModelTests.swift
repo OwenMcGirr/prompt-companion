@@ -34,10 +34,10 @@ final class ModelTests: XCTestCase {
         XCTAssertLessThanOrEqual(snapshot.earlier.reduce(0) { $0 + $1.text.count }, 8000)
     }
     @MainActor
-    private func fixture() -> (CompanionModel, FakeEngine) {
+    private func fixture(copyToClipboard: @escaping (String) -> Bool = { _ in true }) -> (CompanionModel, FakeEngine) {
         let engine = FakeEngine()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PromptCompanionTests-" + UUID().uuidString)
-        let model = CompanionModel(support: directory, engine: engine)
+        let model = CompanionModel(support: directory, engine: engine, copyToClipboard: copyToClipboard)
         model.automatic = false
         return (model, engine)
     }
@@ -135,6 +135,56 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(engine.requested, 1)
         model.insert(0)
         XCTAssertEqual(model.draft.text, "fix login ")
+        model.shutdown()
+    }
+
+    @MainActor
+    func testCopyClearsAndPersistsDraftWithUndoAndFocus() async {
+        var clipboard = ""
+        let (model, engine) = fixture { clipboard = $0; return true }
+        await model.select(task("A"))
+        model.edit(text: "My prompt  ", selection: NSRange(location: 3, length: 2))
+        let original = model.draft
+        let focus = model.focusRequest
+        model.copyPrompt()
+        XCTAssertEqual(clipboard, "My prompt")
+        XCTAssertEqual(model.draft, Draft())
+        XCTAssertTrue(model.copied)
+        XCTAssertGreaterThan(model.focusRequest, focus)
+        let restored = CompanionModel(support: model.support, engine: engine)
+        restored.automatic = false
+        await restored.select(task("A"))
+        XCTAssertEqual(restored.draft, Draft())
+        model.undo()
+        XCTAssertEqual(model.draft, original)
+        XCTAssertEqual(clipboard, "My prompt")
+        model.shutdown(); restored.shutdown()
+    }
+
+    @MainActor
+    func testFailedCopyPreservesDraftAndSelection() async {
+        let (model, _) = fixture { _ in false }
+        await model.select(task("A"))
+        model.edit(text: "Keep my prompt", selection: NSRange(location: 5, length: 2))
+        let original = model.draft
+        let focus = model.focusRequest
+        model.copyPrompt()
+        XCTAssertEqual(model.draft, original)
+        XCTAssertEqual(model.focusRequest, focus)
+        XCTAssertFalse(model.copied)
+        XCTAssertNotNil(model.problem)
+        model.shutdown()
+    }
+
+    @MainActor
+    func testEmptyCopyDoesNotTouchClipboard() async {
+        var writes = 0
+        let (model, _) = fixture { _ in writes += 1; return true }
+        model.edit(text: " \n ", selection: NSRange(location: 3, length: 0))
+        let original = model.draft
+        model.copyPrompt()
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(model.draft, original)
         model.shutdown()
     }
 }

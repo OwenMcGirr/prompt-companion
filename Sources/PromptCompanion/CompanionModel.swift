@@ -58,8 +58,14 @@ final class CompanionModel: ObservableObject {
     private var selectionRevision = 0
     private var connectingRevision = 0
     private var phraseWidth: CGFloat = 430
+    private let copyToClipboard: (String) -> Bool
 
-    init(support: URL? = nil, engine: (any PredictionService)? = nil) {
+    init(support: URL? = nil, engine: (any PredictionService)? = nil,
+         copyToClipboard: @escaping (String) -> Bool = { text in
+             NSPasteboard.general.clearContents()
+             return NSPasteboard.general.setString(text, forType: .string)
+         }) {
+        self.copyToClipboard = copyToClipboard
         self.support = support ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PromptCompanion")
         self.engine = engine ?? CompanionEngine(support: self.support)
         if let data = try? Data(contentsOf: self.support.appendingPathComponent("drafts.json")),
@@ -241,9 +247,15 @@ final class CompanionModel: ObservableObject {
     }
 
     func copyPrompt() {
-        guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(draft.text.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+        let prompt = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        guard copyToClipboard(prompt) else {
+            copied = false
+            problem = "Couldn’t copy the prompt. Your draft has been kept; try Copy Prompt again."
+            return
+        }
+        problem = nil
+        clearDraft()
         copied = true; status = "Copied — paste into your Codex prompt"
     }
 
