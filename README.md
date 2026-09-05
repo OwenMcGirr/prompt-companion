@@ -153,4 +153,4 @@ Accessibility feedback, bug reports, and focused improvements are welcome. Read 
 
 ## License
 
-A license has not been selected yet. No open-source license is granted by this repository at present; a license decision is pending before public release.
+Licensed under the [MIT License](LICENSE). Copyright © 2026 Owen McGirr.
