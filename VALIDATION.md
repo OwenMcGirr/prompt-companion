@@ -1,6 +1,6 @@
 # Validation — 5 September 2026
 
-Built on this Mac using Apple Swift 6.3.3 for Apple Silicon, with macOS 14 as the deployment minimum.
+Recorded development environment: Apple Swift 6.3.3 for Apple Silicon, with macOS 14 as the deployment minimum.
 
 - 32 deterministic tests pass: text insertion, partial words, selections, combining accents, emoji, output validation, bounded context, preservation of the opening goal, late-result rejection, pointer freeze, draft isolation, instant phrase reuse, persistence, Clear, Undo, copy success, copy failure, empty-copy behavior, expansion parsing, whole-draft replacement, clarification, cancellation, late responses, expansion Undo/persistence/focus, and expansion-to-copy behavior.
 - The opt-in live integration test passes against the installed Codex 0.153.1 with the existing ChatGPT sign-in. It reads local task metadata and this task's history without resuming the source task.
@@ -10,9 +10,9 @@ Built on this Mac using Apple Swift 6.3.3 for Apple Silicon, with macOS 14 as th
 
 ## Native interface checks
 
-After the Mac was unlocked, the app opened and displayed contextual suggestions. A real left click on “Verify focus returns to the text box” appended that phrase to the existing draft. The accessibility tree confirmed that the Prompt draft text area was the focused element immediately afterward. Clicking Undo restored the original draft and kept focus in that text area. The original draft was preserved. The updated Copy Prompt button was also tested: it clears the draft and restores focus, and pasting back into the draft confirms that the clipboard text is intact. That copy check left a cleared draft and the copied prompt on the clipboard. Pasting into Codex itself and the remaining Settings controls still need a manual check; longer personal accessibility trials remain outstanding.
+The app opened and displayed contextual suggestions. A real left click on “Verify focus returns to the text box” appended that phrase to the existing draft. The accessibility tree confirmed that the Prompt draft text area was the focused element immediately afterward. Clicking Undo restored the original draft and kept focus in that text area. The original draft was preserved. The updated Copy Prompt button was also tested: it clears the draft and restores focus, and pasting back into the draft confirms that the clipboard text is intact. That copy check left a cleared draft and the copied prompt on the clipboard. Pasting into Codex itself and the remaining Settings controls still need a manual check; longer personal accessibility trials remain outstanding.
 
-Direct composition in Codex and automatic tracking of the visible Codex task are not included. The computer-use tool explicitly blocks inspecting Codex itself. This build implements the accepted separate-composer fallback and uses a clearly labeled task picker.
+Direct composition in Codex and automatic tracking of the visible Codex task are not included. This build uses a separate composer and an explicitly selected task for context.
 
 ## Expansion review
 
@@ -27,8 +27,12 @@ The current expansion review passes against Sol using synthetic app context. Ear
 
 Observed initial expansion requests took approximately 3.7–6.3 seconds. These samples support this review, not a guarantee of latency or semantic equivalence on every prompt. The initial lighter-model review exposed ambiguity and verb-sequence errors; Sol and clearer interpretation rules produced the reviewed outputs above.
 
-In the running app, a real click on Expand replaced “bigger buttons same layout” with a fuller prompt and returned keyboard focus to the draft. One click on Undo restored the shorthand. “bigger text or buttons” displayed a clear question with three stable buttons; clicking “The buttons” expanded only that interpretation. Keep original cancelled another attempt without changing the shorthand. The default layout was visually inspected, and the user's original draft was restored after testing. The updated application remains running.
+In the running app, a real click on Expand replaced “bigger buttons same layout” with a fuller prompt and returned keyboard focus to the draft. One click on Undo restored the shorthand. “bigger text or buttons” displayed a clear question with three stable buttons; clicking “The buttons” expanded only that interpretation. Keep original cancelled another attempt without changing the shorthand. The default layout was visually inspected, and the pre-test draft was restored after testing. The updated application remains running.
 
 ## Settings dark-mode fix
 
 Rebuilt the release app and checked Settings with actual clicks in macOS dark appearance. Adaptive AppKit label and window-background colors replace the inherited fixed ink color and translucent surface. All labels and multiline descriptions are visible; the popover keeps its full content height. Toggled “Keep this window above other apps” off and on, verified both accessibility values, and restored the original enabled preference. The draft was untouched. Light appearance and live system appearance switching were not manually tested. This presentation-only change does not alter generation or draft behavior.
+
+## Public repository preparation
+
+A clean Swift scratch-directory run passed 32 deterministic tests with two live tests skipped. Release packaging was checked separately. Added a macOS GitHub Actions workflow for deterministic tests, packaging, and signature/plist validation; no account credentials or live generation are configured in CI. Reviewed tracked file names and commit author metadata, and scanned all 30 unique tracked blobs across the four pre-preparation commits for common API/GitHub/AWS credential patterns, private-key headers, and personal absolute paths. No matches were found. This limited pattern scan is not a comprehensive security audit.

@@ -1,69 +1,156 @@
 # Prompt Companion
 
-A native Mac app that predicts chunks of your next prompt using a selected Codex task's conversation. It uses ordinary left click, large stable buttons, and the existing Codex ChatGPT sign-in.
+A native macOS app that helps you write Codex prompts with less typing. Choose a task, type a few words, and click useful phrase suggestions—or expand shorthand into a fuller, editable prompt using that task’s conversation.
 
-## Use it
+Designed around large buttons and ordinary left clicks, including for people who use head-controlled pointing. Speech is not required.
 
-1. Open **Prompt Companion.app** next to this source folder.
-2. Click the task you are working on. The task stays selected until you change it using the context button at the top.
-3. Type in **Your prompt**, or choose a suggested starting phrase. Click a phrase to insert it. For a full prompt from shorthand, click **Expand** beside the draft.
-4. Click **Copy Prompt**. After a successful copy, the draft clears and focus returns to the writing area. Paste into Codex using your usual paste method. Nothing is submitted automatically. If copying fails, your draft stays intact.
+**Status:** early-stage community project. This is an independent companion app, not an official OpenAI product. It reads selected task context and helps compose text; you review, copy, and paste into Codex yourself. Nothing is sent to a Codex task automatically.
 
-**Undo** reverses the most recent edit, including a phrase insertion, an expansion, Clear, or the clearing after Copy Prompt. Undoing a copy restores your draft without changing the clipboard. Drafts are saved separately for each task and restored after reopening. A short trailing space is added when appropriate so you can continue typing immediately.
+[Setup](#setup) · [Build and run](#build-and-run) · [Usage](#usage) · [Tests](#tests) · [Troubleshooting](#troubleshooting) · [Contributing](CONTRIBUTING.md)
 
-The settings button adjusts text size and phrase-button height, pauses automatic suggestions, and controls whether the window stays on top. Session counters show typed and inserted characters and selected phrases. These are activity counts, not a measured claim about effort saved.
+## Requirements
 
-Suggestions freeze while the pointer is over the three-button area. If new suggestions arrive then, move the pointer out of that area to reveal them. Suggestions based on an older draft become unclickable immediately.
+- **macOS 14 or newer.** The interface uses SwiftUI and AppKit; Windows and Linux are not supported.
+- **Swift 6 or newer** and the macOS SDK, provided by a compatible Xcode or Xcode Command Line Tools installation.
+- **Codex installed and signed in with ChatGPT**, with available usage allowance and at least one local task. API-key authentication is not supported by this app.
+- Internet access for phrase generation and expansion. Building and deterministic tests do not need a Codex account.
 
-## Expand shorthand
+Development has been checked on Apple Silicon with Swift 6.3.3 and Codex 0.153.1. Other versions and Intel Macs are not yet verified. The build targets the current Mac’s architecture; it does not produce a universal binary.
 
-Write a short note such as **“bigger buttons same layout”** and click **Expand**. The app rewrites the whole draft into an editable prompt using the selected conversation. A successful expansion restores focus to the draft and is one undoable edit; Undo restores the original text and selection. Expanded prompts are saved normally and use the same copy-and-clear behavior.
+## Setup
 
-When the meaning would materially change the request, the app asks one short question using the existing large phrase buttons. Click an interpretation to expand with that meaning, or **Keep original** to cancel. The app does not ask a second clarification question; remaining uncertainty stays in the wording. New choices wait until the pointer leaves the button area before appearing.
+1. Install Apple’s command-line developer tools if needed:
 
-Expansion is explicit, not automatic. Phrase generation pauses during expansion and clarification. Editing, changing tasks, clearing, copying, or receiving an updated conversation cancels the expansion and rejects late results. Errors leave the original text untouched. Afterward, the normal phrase workflow is available again.
+   ```sh
+   xcode-select --install
+   ```
 
-Expansion instructions preserve questions, limits, corrections, negations, and directly applicable constraints. Details must come from the conversation; earlier permissions to commit or push do not become permissions in a new prompt. The result remains editable because generative rewriting can still miss nuance. The default is one concise paragraph, usually 2–5 sentences and shorter when sufficient.
+   Complete the installer, then check `swift --version`. If it is older than Swift 6, update your developer tools. If using full Xcode, open it once to complete setup.
 
-## Current integration
+2. Install and open Codex, sign in using **ChatGPT**, and create or open a task. CLI users can follow the [official Codex CLI setup instructions](https://learn.chatgpt.com/docs/codex/cli). Open Codex once before starting Prompt Companion so its local model catalog is available.
 
-This version implements the accepted **companion composer fallback**. Direct insertion into Codex and automatic detection of the visible Codex task are not implemented: the available computer-use tool blocks inspecting Codex, so those capabilities could not be verified. The app does not capture the screen, monitor global keystrokes, patch Codex, or request macOS Accessibility access.
+3. Clone the repository:
 
-The task picker reads local task metadata through the installed `codex app-server`. Conversation history is read without resuming or writing to the source task. It refreshes every eight seconds. For long tasks, the first three and most recent 24 turns are used; the UI labels this as partial context. Only user and assistant text is used, excluding reasoning, tool output, and attachment contents. Earlier included messages are summarized with the first prediction; recent messages remain available as text. Any conversation change invalidates that summary and existing predictions.
+   ```sh
+   git clone https://github.com/OwenMcGirr/prompt-companion.git
+   cd prompt-companion
+   ```
 
-## Predictions and account access
+No third-party Swift package dependencies or new API keys are required. Prompt Companion uses your existing Codex sign-in; do not copy credentials into this repository.
 
-Uses the existing Codex **ChatGPT** sign-in and its usage allowance. There is no API-key setup, credential copying, or automatic switch to separately billed API usage. The selected conversation excerpts and the draft are sent to OpenAI for prediction. Drafts are saved locally in `~/Library/Application Support/PromptCompanion/drafts.json` with owner-only permissions. The app does not log prompt text. Codex's own account and retention behavior still applies.
+## Build and run
 
-Phrase suggestions use `gpt-5.6-luna`; explicit whole-prompt expansion uses `gpt-5.6-sol` for interpretation quality. Both are checked against the installed Codex model list. A listed fast model replaces Luna if needed; expansion falls back to the phrase model if Sol is unavailable. Settings shows the active models. Each generation owns a separate ephemeral thread and transport, so cancelling an older request cannot close or overwrite a newer request. These sessions do not appear as saved tasks or modify the selected conversation.
+Run these commands from the repository root:
 
-Executable capabilities are removed using process/thread configuration: shell, connectors, plugins, browsing, computer use, image tools, hooks, agents, and related tools are disabled. A private copy of the installed model metadata removes `apply_patch`. Any remaining interactive server requests are rejected. The prediction sandbox is read-only. User Codex configuration is not edited.
+```sh
+./build.sh "$PWD/dist"
+open "dist/Prompt Companion.app"
+```
 
-The app-server and local catalog formats can change with Codex updates. Reconnect retries the connection and reloads metadata. A connection or prediction error preserves the draft. Unsupported model metadata or missing ChatGPT authentication prevents prediction instead of silently loosening these constraints.
+Alternatively, open `dist` in Finder and double-click **Prompt Companion.app**. You can copy the bundle to your Applications folder. Quit any running copy before rebuilding or replacing it.
 
-## Build and test
+The script makes a release build, includes the icon and app metadata, and applies a local ad-hoc signature. It does **not** notarize the app or sign it with a Developer ID for distribution. This repository’s documented installation path is building from source.
 
-Requires macOS 14+, Swift 6 / Xcode command-line tools, and an installed Codex CLI or desktop app. The supplied app is built for this Apple Silicon Mac and signed locally, not notarized for distribution.
+Without an output argument, `./build.sh` places the bundle in the repository’s parent directory. Set `PROMPT_COMPANION_BUILD_DIR` to change the Swift build cache location:
+
+```sh
+PROMPT_COMPANION_BUILD_DIR="$PWD/.build-release" ./build.sh "$PWD/dist"
+```
+
+For a quick development build and run without packaging:
+
+```sh
+swift run PromptCompanion
+```
+
+Use the packaged app when checking the icon, window behavior, and Finder launch. Open `Package.swift` in Xcode if you prefer an IDE.
+
+## Usage
+
+1. **Choose a task.** Click the context button at the top and select the Codex conversation you want to use. The app keeps this selection until you change it; it does not detect the task currently visible in Codex.
+2. **Write your prompt.** Type into the draft, or click one of the three large phrase buttons. A phrase is inserted at the cursor or replaces the selection, and focus returns to the draft so you can keep typing.
+3. **Expand shorthand when helpful.** Click **Expand** to rewrite the entire draft into a fuller prompt using the selected conversation. Review and edit the result.
+4. **Copy and use it.** Click **Copy Prompt**, then paste into Codex with your usual paste method. A successful copy clears the draft and returns focus to it. A failed copy keeps the text. You decide when to submit in Codex.
+
+**Undo** reverses the last edit, including a phrase insertion, expansion, Clear, or clearing after Copy Prompt. Undoing a copy restores the draft without changing the clipboard. Drafts are saved separately for each task and restored after reopening the app.
+
+Suggestions stay stable while the pointer is over the phrase area. Move the pointer out to reveal waiting suggestions. Results based on an older draft become unclickable immediately. Use **Refresh phrases** to request another set.
+
+### Expand shorthand
+
+Examples to try in a relevant task:
+
+| Short draft | Intended behavior |
+| --- | --- |
+| `bigger buttons same layout` | Ask for larger buttons while preserving the established layout. |
+| `why slow` | Ask for an explanation of the relevant delay; keep it a question. |
+| `fix it` | Offer clickable interpretations if the conversation leaves more than one meaningful issue unresolved. |
+| `copy clear but no push` | Preserve the requested copy-and-clear behavior and the instruction not to push. |
+
+If clarification is needed, choose one of 2–3 interpretations or click **Keep original**. There is at most one clarification round. Expansion pauses phrase predictions. Editing, changing tasks, clearing, copying, or a conversation update cancels it; failures keep the original draft. A successful replacement is one undoable edit.
+
+The generation instructions preserve intent, limits, uncertainty, and questions, and use details already established in context. Earlier permission to commit, push, or deploy is not supposed to become permission in a new prompt. **Review generated wording:** these are intended behaviors, not guarantees that a model will always interpret your meaning correctly.
+
+### Settings
+
+Click the sliders icon to adjust text size, phrase-button height, automatic suggestions, and whether the window stays above other apps. Settings follows macOS light/dark appearance; the main composer currently uses a light palette. Session counters report typing and phrase activity, not a measured amount of effort saved.
+
+## Context, privacy, and account usage
+
+- The selected conversation excerpts and your draft go to OpenAI for generation using your existing Codex ChatGPT sign-in and allowance. This is not an offline text predictor and does not switch to separately billed API access.
+- The app reads local task metadata/history through `codex app-server`, without resuming or writing to the selected task. Context refreshes every eight seconds.
+- Long conversations use the first three and most recent 24 turns, with partial context indicated in the interface. Only user and assistant text is included; tool output, reasoning, and attachment contents are excluded. Earlier included text may be summarized for prediction.
+- Drafts and preferences are stored in `~/Library/Application Support/PromptCompanion/drafts.json`, with owner-only file permissions. This is local storage, not encryption. To reset saved drafts and preferences, quit the app and move this file to a safe backup location.
+- Prompt Companion does not log prompt text, capture the screen, monitor global keystrokes, or request macOS Accessibility access. Codex’s own account and retention behavior still applies.
+- Each generation uses an isolated ephemeral session. Executable capabilities are disabled, interactive server requests are rejected, and the generation sandbox is read-only. A private model-catalog copy removes file-editing tools without changing your Codex configuration.
+
+Phrase generation prefers `gpt-5.6-luna`; expansion prefers `gpt-5.6-sol`. The installed model list is checked, with a supported fast-model fallback for phrases and the phrase model as the expansion fallback. Settings shows the models actually in use. Codex protocol and catalog changes can break compatibility; unsupported metadata causes an error instead of relaxing tool restrictions.
+
+## Tests
+
+Run the deterministic suite from the repository root:
 
 ```sh
 swift test
-./build.sh
 ```
 
-`build.sh` puts the application next to the source folder by default. An optional first argument changes the output directory. `PROMPT_COMPANION_BUILD_DIR` can put build artifacts elsewhere.
+The two live tests are skipped by default. Deterministic tests cover text insertion, Unicode and selections, context limits, stale results, pointer freeze, draft persistence, Undo, copy-and-clear, expansion, clarification, cancellation, and failure recovery. GitHub Actions is configured to run these tests and package the app on macOS without account credentials.
 
-The live integration tests are opt-in because it uses the existing Codex allowance:
+To run live integration tests locally **using your Codex usage allowance**:
 
 ```sh
 PROMPT_COMPANION_LIVE_TEST=1 swift test --filter LiveIntegrationTests
 ```
 
-Optionally set `PROMPT_COMPANION_TEST_TASK` to a task ID to include a read-only history check. The prediction portion uses synthetic login-crash context, regardless of the selected task. The expansion review checks the four shorthand examples and a clarification response against synthetic app context. Review the printed output for meaning as well as checking test success.
+Sign in and have at least one local Codex task first. Optionally set `PROMPT_COMPANION_TEST_TASK` to a task ID for a read-only history check. Generated test requests use synthetic context. Inspect the printed expansion examples for meaning; automated assertions cannot fully establish preserved intent.
 
-Unit tests cover partial words, replacement inside a word, selections, emoji, punctuation, malformed predictions, context filtering/budgeting, stale-result rejection, pointer freeze, Undo, task switching, persistence, copy behavior, expansion and clarification validation, cancellation, late responses, and expansion-to-copy behavior.
+Before proposing a UI change, check actual clicks: phrase insertion and focus, Expand, clarification, Keep original, Undo, Copy Prompt clearing, and Settings appearance. See [VALIDATION.md](VALIDATION.md) for recorded checks and remaining limitations.
 
-## First personal trial
+## Troubleshooting
 
-Try composing a correction, a follow-up question, and a request to change something in a real task. Note whether each useful chunk arrives soon enough and whether selecting it feels easier than typing it. Adjust font size and button height in Settings. The next iteration should be guided by that experience, especially phrase length, button placement, and the cost of copying back into Codex.
+| Problem | What to try |
+| --- | --- |
+| `swift` is missing or too old | Install/update Xcode or Command Line Tools and check `swift --version`. |
+| Codex cannot be found | Install Codex in `/Applications` or `~/Applications`, or the CLI in `/opt/homebrew/bin`, `/usr/local/bin`, or your launch environment’s `PATH`. Finder launches may not inherit shell PATH customizations. |
+| ChatGPT sign-in is required | Sign into Codex with ChatGPT, then click **Reconnect**. An API-key login is not accepted. |
+| Model catalog unavailable | Open Codex once, then reconnect. Update Codex if its metadata is unsupported. |
+| No task or wrong context | Create/open a local Codex task, refresh the task list, and explicitly select the right task. |
+| Suggestions appear stuck | Move the pointer away from the phrase area. Check automatic suggestions in Settings or click **Refresh phrases**. |
+| Timeout or connection error | Check network connectivity and Codex allowance, then retry or reconnect. Your draft remains available. |
+| An old version opens | Quit all running copies and open the exact bundle you just built. |
 
-Protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server).
+For a reproducible problem, [open an issue](https://github.com/OwenMcGirr/prompt-companion/issues) with macOS, Swift, and Codex versions, steps, expected behavior, and actual behavior. Use synthetic examples and redact private conversation text and account information.
+
+## Project layout and contributions
+
+- `Sources/CompanionCore`: draft editing, context processing, and expansion response validation.
+- `Sources/PromptCompanion`: SwiftUI/AppKit interface, state and persistence, generation service, and app-server transport.
+- `Tests/CompanionCoreTests`: deterministic tests and opt-in live integration tests.
+- `Resources`: bundle metadata and icon.
+- `build.sh`: release app packaging and local signing.
+
+Accessibility feedback, bug reports, and focused improvements are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes.
+
+## License
+
+A license has not been selected yet. No open-source license is granted by this repository at present; a license decision is pending before public release.

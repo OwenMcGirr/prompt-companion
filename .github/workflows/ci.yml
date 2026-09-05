@@ -1,0 +1,33 @@
+name: macOS build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Swift version
+        run: swift --version
+      - name: Run deterministic tests (live tests stay disabled)
+        env:
+          PROMPT_COMPANION_LIVE_TEST: "0"
+        run: swift test
+      - name: Build app bundle
+        run: ./build.sh "$PWD/dist"
+      - name: Validate app bundle
+        run: |
+          codesign --verify --deep --strict "dist/Prompt Companion.app"
+          plutil -lint "dist/Prompt Companion.app/Contents/Info.plist"
