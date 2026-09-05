@@ -11,6 +11,14 @@ struct SavedState: Codable {
     var floating = true
 }
 
+private struct ExpansionSnapshot {
+    let revision: Int
+    let draft: Draft
+    let task: CodexTask
+    let context: ContextSnapshot
+    let summary: String
+}
+
 @MainActor
 final class CompanionModel: ObservableObject {
     @Published var tasks: [CodexTask] = []
@@ -22,6 +30,9 @@ final class CompanionModel: ObservableObject {
     @Published var contextStatus = "Choose a task for relevant suggestions"
     @Published var isConnecting = false
     @Published var isPredicting = false
+    @Published private(set) var isExpanding = false
+    @Published private(set) var expansionActive = false
+    @Published private(set) var clarification: ExpansionClarification?
     @Published var isLoadingTasks = false
     @Published var showTasks = false
     @Published var taskSearch = ""
@@ -51,6 +62,9 @@ final class CompanionModel: ObservableObject {
     private var hovering = false
     private var debounce: Task<Void, Never>?
     private var prediction: Task<Void, Never>?
+    private var expansion: Task<Void, Never>?
+    private var expansionSource: ExpansionSnapshot?
+    private var pendingClarification: ExpansionClarification?
     private var poll: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var taskCursor: String?
@@ -77,9 +91,11 @@ final class CompanionModel: ObservableObject {
         }
     }
 
-    var canInsert: Bool { batch?.valid(for: draft, revision: revision) == true && batch?.phrases.isEmpty == false && context != nil }
+    var canInsert: Bool { !expansionActive && batch?.valid(for: draft, revision: revision) == true && batch?.phrases.isEmpty == false && context != nil }
+    var canExpand: Bool { !expansionActive && engine.connected && !isConnecting && selected != nil && context != nil && !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var connected: Bool { engine.connected }
     var modelName: String { engine.model }
+    var expansionModelName: String { engine.expansionModel }
     var effectiveButtonHeight: Double { max(buttonHeight, ceil(fontSize * 3.6)) }
 
     func connect() async {
@@ -179,8 +195,10 @@ final class CompanionModel: ObservableObject {
             contextDate = Date()
             contextStatus = snapshot.isPartial ? "Recent conversation + opening messages" : "Conversation connected"
             guard snapshot != context else { return }
+            let cancelledExpansion = expansionActive
             invalidate(); context = snapshot; earlierSummary = ""
             schedulePrediction()
+            if cancelledExpansion { status = "Conversation changed — click Expand again to use the latest context" }
         } catch {
             guard selection == selectionRevision else { return }
             contextStatus = "Conversation refresh paused"
@@ -215,7 +233,7 @@ final class CompanionModel: ObservableObject {
     }
 
     func insert(_ index: Int) {
-        guard let batch, batch.valid(for: draft, revision: revision), batch.phrases.indices.contains(index),
+        guard !expansionActive, let batch, batch.valid(for: draft, revision: revision), batch.phrases.indices.contains(index),
               let next = batch.target.inserting(batch.phrases[index]) else { return }
         rememberUndo()
         insertedCharacters += max(0, next.text.count - draft.text.count)
@@ -249,6 +267,7 @@ final class CompanionModel: ObservableObject {
     func copyPrompt() {
         let prompt = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
+        if expansionActive { invalidate(); schedulePrediction() }
         guard copyToClipboard(prompt) else {
             copied = false
             problem = "Couldn’t copy the prompt. Your draft has been kept; try Copy Prompt again."
@@ -259,8 +278,68 @@ final class CompanionModel: ObservableObject {
         copied = true; status = "Copied — paste into your Codex prompt"
     }
 
+    func expandDraft() {
+        guard canExpand, let selected, let context else { return }
+        invalidate()
+        let source = ExpansionSnapshot(revision: revision, draft: draft, task: selected, context: context, summary: earlierSummary)
+        expansionSource = source
+        expansionActive = true; isExpanding = true; problem = nil
+        status = "Expanding your words…"
+        expansion = Task { @MainActor [weak self] in await self?.runExpansion(source, resolution: nil) }
+    }
+
+    func chooseInterpretation(_ index: Int) {
+        guard !isExpanding, let clarification, clarification.choices.indices.contains(index),
+              let source = expansionSource, source.revision == revision, source.draft == draft else { return }
+        let resolution = ExpansionResolution(question: clarification.question, choice: clarification.choices[index])
+        self.clarification = nil; pendingClarification = nil; isExpanding = true
+        status = "Expanding with your chosen meaning…"
+        expansion = Task { @MainActor [weak self] in await self?.runExpansion(source, resolution: resolution) }
+    }
+
+    func keepOriginal() {
+        guard expansionActive else { return }
+        invalidate(); focusRequest += 1
+        schedulePrediction()
+        status = "Kept your original words"
+    }
+
+    private func runExpansion(_ source: ExpansionSnapshot, resolution: ExpansionResolution?) async {
+        do {
+            let result = try await engine.expand(draft: source.draft.text, context: source.context,
+                title: source.task.title, earlierSummary: source.summary, resolution: resolution)
+            guard !Task.isCancelled, source.revision == revision, source.draft == draft,
+                  selected?.id == source.task.id else { return }
+            switch result {
+            case .expanded(let text):
+                rememberUndo()
+                insertedCharacters += max(0, text.count - draft.text.count)
+                invalidate(); draft = Draft(text: text, cursor: (text as NSString).length)
+                copied = false; focusRequest += 1; save(); schedulePrediction()
+                status = "Expanded — edit it, copy it, or Undo to restore your shorthand"
+            case .needsClarification(let choices):
+                guard resolution == nil else { throw ExpansionError.invalidOutput }
+                // Choices must be fully readable before they can authorize a rewrite.
+                guard choices.choices.allSatisfy(phraseFits) else { throw ExpansionError.invalidOutput }
+                if hovering { pendingClarification = choices }
+                else { clarification = choices }
+                isExpanding = false
+                status = hovering ? "Choices ready — move off the buttons to show them" : choices.question
+            }
+        } catch is CancellationError { }
+        catch {
+            guard source.revision == revision else { return }
+            invalidate(); schedulePrediction()
+            problem = error.localizedDescription
+            status = "Your original words are unchanged"
+        }
+    }
+
     func setHovering(_ value: Bool) {
         hovering = value
+        if !value, let choices = pendingClarification, expansionActive {
+            pendingClarification = nil; clarification = choices; status = choices.question
+        }
         if !value, let pendingBatch {
             self.pendingBatch = nil
             if pendingBatch.valid(for: draft, revision: revision) { present(pendingBatch) }
@@ -293,11 +372,15 @@ final class CompanionModel: ObservableObject {
         revision += 1
         debounce?.cancel(); debounce = nil
         prediction?.cancel(); prediction = nil
+        expansion?.cancel(); expansion = nil
         engine.cancelPrediction()
+        expansionSource = nil; pendingClarification = nil; clarification = nil
+        isExpanding = false; expansionActive = false
         pendingBatch = nil; isPredicting = false
     }
 
     func refreshPredictions() {
+        guard !expansionActive else { return }
         problem = nil
         invalidate()
         if context == nil, let selected { Task { await select(selected) } }
@@ -310,11 +393,13 @@ final class CompanionModel: ObservableObject {
         for window in NSApplication.shared.windows where window.identifier?.rawValue == "companion" {
             window.level = floating ? .floating : .normal
         }
+        if expansionActive { return }
         if !automatic { invalidate(); status = "Automatic suggestions paused" }
         else if !canInsert { schedulePrediction() }
     }
 
     private func schedulePrediction(immediate: Bool = false, force: Bool = false) {
+        guard !expansionActive else { return }
         guard engine.connected, context != nil, selected != nil else { return }
         guard automatic || force else { status = "Click Refresh phrases when you’re ready"; return }
         debounce?.cancel()

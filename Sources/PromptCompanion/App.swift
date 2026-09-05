@@ -31,7 +31,7 @@ struct CompanionView: View {
     @State private var showSettings = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "text.bubble.fill").font(.system(size: 24)).foregroundStyle(teal)
                 VStack(alignment: .leading, spacing: 1) {
@@ -62,7 +62,13 @@ struct CompanionView: View {
             HStack {
                 Text("YOUR PROMPT").font(.system(size: 11, weight: .bold)).tracking(1.2)
                 Spacer()
-                Text(model.selected == nil ? "" : "Saved on this Mac").font(.system(size: 12)).foregroundStyle(.secondary)
+                Button { model.expandDraft() } label: {
+                    Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 17, weight: .semibold)).frame(width: 126, height: 44)
+                        .foregroundStyle(teal).background(.white, in: RoundedRectangle(cornerRadius: 11))
+                        .overlay(RoundedRectangle(cornerRadius: 11).stroke(teal.opacity(0.3)))
+                }.buttonStyle(.plain).disabled(!model.canExpand)
+                    .accessibilityLabel("Expand shorthand into a full prompt")
             }
             ZStack(alignment: .topLeading) {
                 PromptEditor(model: model)
@@ -72,23 +78,24 @@ struct CompanionView: View {
                         .padding(.horizontal, 14).padding(.top, 13).allowsHitTesting(false)
                 }
             }
-            .frame(minHeight: 110, idealHeight: 145, maxHeight: .infinity)
+            .frame(minHeight: 90, idealHeight: 130, maxHeight: .infinity)
             .background(.white, in: RoundedRectangle(cornerRadius: 12))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(teal.opacity(0.28), lineWidth: 1.5))
 
             HStack {
-                Text("CONTINUE WITH").font(.system(size: 11, weight: .bold)).tracking(1.2)
+                Text(model.clarification?.question ?? (model.expansionActive ? "EXPANDING YOUR WORDS" : "CONTINUE WITH"))
+                    .font(.system(size: model.clarification == nil ? 11 : 14, weight: .semibold)).lineLimit(2)
                 Spacer()
-                if model.isPredicting { ProgressView().controlSize(.small).accessibilityLabel("Preparing phrases") }
-                Button { model.refreshPredictions() } label: {
-                    Label("Refresh phrases", systemImage: "arrow.clockwise").font(.system(size: 14, weight: .medium))
+                if model.isPredicting || model.isExpanding { ProgressView().controlSize(.small).accessibilityLabel(model.isExpanding ? "Expanding shorthand" : "Preparing phrases") }
+                Button { model.expansionActive ? model.keepOriginal() : model.refreshPredictions() } label: {
+                    Label(model.expansionActive ? "Keep original" : "Refresh phrases", systemImage: model.expansionActive ? "xmark" : "arrow.clockwise").font(.system(size: 14, weight: .medium))
                         .padding(.horizontal, 10).frame(height: 36)
                 }.buttonStyle(.plain).foregroundStyle(teal).disabled(model.selected == nil || model.isConnecting)
-            }
+            }.frame(height: 40)
             VStack(spacing: 9) {
                 ForEach(0..<3) { index in
-                    Button { model.insert(index) } label: {
+                    Button { model.clarification == nil ? model.insert(index) : model.chooseInterpretation(index) } label: {
                         HStack(spacing: 14) {
                             Text(String(index + 1)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(teal.opacity(0.75)).frame(width: 26, height: 26)
@@ -96,16 +103,16 @@ struct CompanionView: View {
                             Text(phrase(at: index)).font(.system(size: model.fontSize, weight: .medium))
                                 .lineLimit(3).multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "plus").font(.system(size: 19, weight: .medium)).foregroundStyle(teal)
+                            Image(systemName: model.clarification == nil ? "plus" : "arrow.right").font(.system(size: 19, weight: .medium)).foregroundStyle(teal)
                         }.padding(.horizontal, 16)
                             .frame(maxWidth: .infinity, minHeight: model.effectiveButtonHeight, maxHeight: model.effectiveButtonHeight)
-                            .background(model.canInsert ? Color.white : Color.white.opacity(0.45), in: RoundedRectangle(cornerRadius: 13))
-                            .overlay(RoundedRectangle(cornerRadius: 13).stroke(teal.opacity(model.canInsert ? 0.3 : 0.09)))
+                            .background(rowEnabled(index) ? Color.white : Color.white.opacity(0.45), in: RoundedRectangle(cornerRadius: 13))
+                            .overlay(RoundedRectangle(cornerRadius: 13).stroke(teal.opacity(rowEnabled(index) ? 0.3 : 0.09)))
                             .contentShape(RoundedRectangle(cornerRadius: 13))
                     }
                     .buttonStyle(PhraseButtonStyle())
-                    .disabled(!model.canInsert || index >= model.phrases.count)
-                    .accessibilityLabel(index < model.phrases.count ? "Insert: \(model.phrases[index])" : "Suggestion \(index + 1), waiting")
+                    .disabled(!rowEnabled(index))
+                    .accessibilityLabel(rowEnabled(index) ? (model.clarification == nil ? "Insert: " : "Choose meaning: ") + phrase(at: index) : "Suggestion \(index + 1), waiting")
                 }
             }
             .onHover { model.setHovering($0) }
@@ -116,7 +123,7 @@ struct CompanionView: View {
 
             HStack(spacing: 8) {
                 Text(model.problem ?? model.status).font(.system(size: 13))
-                    .foregroundStyle(model.problem == nil ? Color.secondary : Color(red: 0.52, green: 0.21, blue: 0.08))
+                    .foregroundStyle(model.problem == nil ? ink.opacity(0.75) : Color(red: 0.52, green: 0.21, blue: 0.08))
                     .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Prediction status: " + (model.problem ?? model.status))
                 if model.problem != nil {
@@ -156,8 +163,15 @@ struct CompanionView: View {
     }
 
     private func phrase(at index: Int) -> String {
+        if let choices = model.clarification?.choices { return index < choices.count ? choices[index] : "Or keep your original words" }
+        if model.expansionActive { return "Preparing your expansion…" }
         if index < model.phrases.count { return model.phrases[index] }
         return model.selected == nil ? ["Choose a task to begin", "Suggestions will use its conversation", "Click a phrase to add it"][index] : "Waiting for a useful phrase…"
+    }
+
+    private func rowEnabled(_ index: Int) -> Bool {
+        if let choices = model.clarification?.choices { return !model.isExpanding && index < choices.count }
+        return model.canInsert && index < model.phrases.count
     }
 }
 
@@ -190,7 +204,7 @@ struct SettingsView: View {
             Divider()
             Text("Uses your Codex ChatGPT sign-in and usage allowance. The selected conversation and draft go to OpenAI for predictions. Drafts stay saved on this Mac.")
                 .font(.system(size: 13)).foregroundStyle(.secondary)
-            Text("Model: \(model.modelName)").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text("Phrases: \(model.modelName)\nExpansion: \(model.expansionModelName)").font(.system(size: 11)).foregroundStyle(.secondary)
         }.padding(24).frame(width: 370)
             .onChange(of: model.fontSize) { _, _ in model.settingsChanged() }
             .onChange(of: model.buttonHeight) { _, _ in model.settingsChanged() }

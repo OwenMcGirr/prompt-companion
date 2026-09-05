@@ -8,16 +8,27 @@ final class FakeEngine: PredictionService {
     var model = "test"
     var requested = 0
     var completions: [CheckedContinuation<PredictionResult, Error>] = []
+    var expansionRequests: [(draft: String, resolution: ExpansionResolution?)] = []
+    var expansionCompletions: [CheckedContinuation<ExpansionResult, Error>] = []
+    var contextSuffix = ""
     func connect() async throws { connected = true }
     func listTasks(cursor: String?, search: String) async throws -> ([CodexTask], String?) { ([], nil) }
     func context(for id: String) async throws -> ContextSnapshot {
-        ContextSnapshot(messages: [ConversationMessage(role: "user", text: id)], isPartial: false)
+        ContextSnapshot(messages: [ConversationMessage(role: "user", text: id + contextSuffix)], isPartial: false)
     }
     func predict(target: CompletionTarget, context: ContextSnapshot, title: String, earlierSummary: String) async throws -> PredictionResult {
         requested += 1
         return try await withCheckedThrowingContinuation { completions.append($0) }
     }
     func cancelPrediction() {} // Deliberately simulate a backend that finishes after cancellation.
+    func expand(draft: String, context: ContextSnapshot, title: String, earlierSummary: String, resolution: ExpansionResolution?) async throws -> ExpansionResult {
+        expansionRequests.append((draft, resolution))
+        return try await withCheckedThrowingContinuation { expansionCompletions.append($0) }
+    }
+    func deliverExpansion(_ result: Result<ExpansionResult, Error>) {
+        guard !expansionCompletions.isEmpty else { return }
+        expansionCompletions.removeFirst().resume(with: result)
+    }
     func stop() { connected = false }
     func deliver(_ phrases: [String]) {
         guard !completions.isEmpty else { return }

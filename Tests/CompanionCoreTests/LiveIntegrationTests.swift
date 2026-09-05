@@ -4,6 +4,40 @@ import CompanionCore
 
 final class LiveIntegrationTests: XCTestCase {
     @MainActor
+    func testContextAwareExpansionExamples() async throws {
+        guard ProcessInfo.processInfo.environment["PROMPT_COMPANION_LIVE_TEST"] == "1" else {
+            throw XCTSkip("Opt-in live expansion review uses the existing Codex allowance.")
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PromptExpansionLive-" + UUID().uuidString)
+        let engine = CompanionEngine(support: directory)
+        defer { engine.stop() }
+        try await engine.connect()
+        let context = ContextSnapshot(messages: [
+            .init(role: "user", text: "Prompt Companion has three phrase buttons arranged vertically, an editable draft, Undo and Copy Prompt. Use ordinary left click. For the previous change, commit and push when done."),
+            .init(role: "assistant", text: "That previous change is complete. Copy Prompt copies the draft; Undo can restore cleared text. The two current concerns are phrase buttons that feel too small and phrase suggestions that arrive slowly. Neither issue has been prioritized. The cause of the delay has not been identified.")
+        ], isPartial: false)
+        for shorthand in ["bigger buttons same layout", "why slow", "fix it", "copy clear but no push"] {
+            let started = Date()
+            let result = try await engine.expand(draft: shorthand, context: context, title: "Prompt Companion", earlierSummary: "", resolution: nil)
+            print("EXPANSION EXAMPLE \(shorthand): \(result) (\(String(format: "%.1f", Date().timeIntervalSince(started)))s)")
+            if shorthand == "fix it" {
+                guard case .needsClarification(let clarification) = result else { XCTFail("Two unresolved issues should offer a choice"); continue }
+                let resolved = try await engine.expand(draft: shorthand, context: context, title: "Prompt Companion", earlierSummary: "",
+                    resolution: .init(question: clarification.question, choice: clarification.choices[0]))
+                print("RESOLVED EXAMPLE: \(resolved)")
+                guard case .expanded = resolved else { XCTFail("A chosen interpretation must not ask again"); continue }
+            } else {
+                guard case .expanded(let prompt) = result else { XCTFail("Clear shorthand should expand directly"); continue }
+                if shorthand == "why slow" { XCTAssertTrue(prompt.contains("?")) }
+                if shorthand != "copy clear but no push" {
+                    XCTAssertFalse(prompt.localizedCaseInsensitiveContains("push"))
+                    XCTAssertFalse(prompt.localizedCaseInsensitiveContains("commit"))
+                }
+            }
+        }
+    }
+
+    @MainActor
     func testExistingCodexLoginAndContextualPrediction() async throws {
         guard ProcessInfo.processInfo.environment["PROMPT_COMPANION_LIVE_TEST"] == "1" else {
             throw XCTSkip("Opt-in live check uses the existing Codex usage allowance.")
