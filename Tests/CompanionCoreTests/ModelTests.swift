@@ -11,10 +11,13 @@ final class FakeEngine: PredictionService {
     var expansionRequests: [(draft: String, resolution: ExpansionResolution?)] = []
     var expansionCompletions: [CheckedContinuation<ExpansionResult, Error>] = []
     var contextSuffix = ""
+    var active = false
+    var contextFails = false
     func connect() async throws { connected = true }
     func listTasks(cursor: String?, search: String) async throws -> ([CodexTask], String?) { ([], nil) }
     func context(for id: String) async throws -> ContextSnapshot {
-        ContextSnapshot(messages: [ConversationMessage(role: "user", text: id + contextSuffix)], isPartial: false)
+        if contextFails { throw CompanionError("Activity unavailable") }
+        return ContextSnapshot(messages: [ConversationMessage(role: "user", text: id + contextSuffix)], isPartial: false, isActive: active)
     }
     func predict(target: CompletionTarget, context: ContextSnapshot, title: String, earlierSummary: String) async throws -> PredictionResult {
         requested += 1
@@ -60,6 +63,115 @@ final class ModelTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTFail("Condition did not become true")
+    }
+
+    func testActivityFromThreadAndLatestTurn() {
+        XCTAssertTrue(ContextSnapshot.taskIsActive(thread: ["status": ["type": "active", "activeFlags": ["waitingOnApproval"]]], latestTurn: nil))
+        XCTAssertTrue(ContextSnapshot.taskIsActive(thread: ["status": ["type": "notLoaded"]], latestTurn: ["status": "inProgress"]))
+        for status in ["completed", "interrupted", "failed"] {
+            XCTAssertFalse(ContextSnapshot.taskIsActive(thread: ["status": ["type": "notLoaded"]], latestTurn: ["status": status]))
+        }
+        XCTAssertFalse(ContextSnapshot.taskIsActive(thread: ["status": ["type": "idle"]], latestTurn: nil))
+    }
+
+    @MainActor
+    func testActiveTaskBlocksGenerationAndPreservesDraft() async {
+        let (model, engine) = fixture()
+        engine.active = true
+        await model.select(task("A"))
+        model.edit(text: "Keep this", selection: NSRange(location: 9, length: 0))
+        model.refreshPredictions()
+        model.expandDraft()
+        await Task.yield()
+        XCTAssertTrue(model.taskIsActive)
+        XCTAssertFalse(model.canInsert)
+        XCTAssertFalse(model.canExpand)
+        XCTAssertEqual(engine.requested, 0)
+        XCTAssertTrue(engine.expansionRequests.isEmpty)
+        XCTAssertEqual(model.draft.text, "Keep this")
+        engine.active = false
+        await model.refreshContext()
+        await Task.yield()
+        XCTAssertFalse(model.taskIsActive)
+        XCTAssertEqual(engine.requested, 0, "Keep automatic suggestions disabled after inactivity")
+        model.refreshPredictions()
+        await waitFor { engine.requested == 1 }
+        engine.deliver(["Keep this concise", "Keep this clear", "Keep this focused"])
+        model.shutdown()
+    }
+
+    @MainActor
+    func testActivityCancelsLateAndHoverQueuedSuggestionsThenResumes() async {
+        let (model, engine) = fixture()
+        await model.select(task("A"))
+        model.setHovering(true)
+        model.refreshPredictions()
+        await waitFor { engine.requested == 1 }
+        engine.deliver(["Fix login", "Add tests", "Explain error"])
+        await waitFor { !model.isPredicting }
+        engine.active = true
+        await model.refreshContext()
+        model.setHovering(false)
+        XCTAssertTrue(model.phrases.isEmpty)
+        XCTAssertFalse(model.canInsert)
+        engine.active = false
+        await model.refreshContext()
+        model.refreshPredictions()
+        await waitFor { engine.requested == 2 }
+        engine.active = true
+        await model.refreshContext()
+        engine.deliver(["Stale one", "Stale two", "Stale three"])
+        await Task.yield()
+        XCTAssertTrue(model.phrases.isEmpty)
+        XCTAssertFalse(model.isPredicting)
+        model.automatic = true
+        engine.active = false
+        await model.refreshContext()
+        try? await Task.sleep(nanoseconds: 950_000_000)
+        await waitFor { engine.requested == 3 }
+        engine.deliver(["Fresh one", "Fresh two", "Fresh three"])
+        await waitFor { model.canInsert }
+        XCTAssertEqual(model.phrases.first, "Fresh one")
+        model.shutdown()
+    }
+
+    @MainActor
+    func testGenerationRechecksActivityBeforeRequest() async {
+        let (model, engine) = fixture()
+        await model.select(task("A"))
+        engine.active = true // No poll yet: the generation preflight must detect this.
+        model.refreshPredictions()
+        await waitFor { model.taskIsActive }
+        XCTAssertEqual(engine.requested, 0)
+        model.shutdown()
+    }
+
+    @MainActor
+    func testActiveTaskCancelsExpansionAndKeepsOriginal() async {
+        let (model, engine) = fixture()
+        await model.select(task("A"))
+        model.edit(text: "bigger buttons", selection: NSRange(location: 14, length: 0))
+        model.expandDraft()
+        await waitFor { engine.expansionRequests.count == 1 }
+        engine.active = true
+        await model.refreshContext()
+        engine.deliverExpansion(.success(.expanded("Make the buttons larger.")))
+        await Task.yield()
+        XCTAssertFalse(model.expansionActive)
+        XCTAssertEqual(model.draft.text, "bigger buttons")
+        XCTAssertFalse(model.canExpand)
+        model.shutdown()
+    }
+
+    @MainActor
+    func testActivityCheckFailureDoesNotStartGeneration() async {
+        let (model, engine) = fixture()
+        await model.select(task("A"))
+        engine.contextFails = true
+        model.refreshPredictions()
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(engine.requested, 0)
+        model.shutdown()
     }
 
     @MainActor

@@ -36,3 +36,9 @@ Rebuilt the release app and checked Settings with actual clicks in macOS dark ap
 ## Public repository preparation
 
 A clean Swift scratch-directory run passed 32 deterministic tests with two live tests skipped. Release packaging was checked separately. Added a macOS GitHub Actions workflow for deterministic tests, packaging, and signature/plist validation; no account credentials or live generation are configured in CI. Reviewed tracked file names and commit author metadata, and scanned all 30 unique tracked blobs across the four pre-preparation commits for common API/GitHub/AWS credential patterns, private-key headers, and personal absolute paths. No matches were found. This limited pattern scan is not a comprehensive security audit.
+
+## Pause generation during active tasks
+
+40 deterministic tests pass, with two live generation tests skipped. New coverage includes active and idle task status, unfinished turns reported through a separate app-server, lifecycle markers across file-read boundaries, incomplete trailing history records, missing history, generation preflight failure, late and hover-queued results, cancellation of expansion, preservation of drafts, and automatic resumption while respecting the automatic-suggestions setting. The normal release build and strict bundle signature check pass.
+
+The real selected task was running during the native UI check. Its separate app-server metadata reported `notLoaded` and its reconstructed turn reported `interrupted`, while the persisted history had an unmatched `task_started` event. The updated app correctly displayed the active-task pause, disabled Refresh phrases and the three suggestion buttons, and retained the editable draft. Inactive transitions were tested with the fake service; the same real task cannot finish while this verification turn is running. Polling is approximately every two seconds, with another activity check before generation, so status changes are not instantaneous.

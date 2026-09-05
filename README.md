@@ -74,6 +74,8 @@ Use the packaged app when checking the icon, window behavior, and Finder launch.
 
 **Undo** reverses the last edit, including a phrase insertion, expansion, Clear, or clearing after Copy Prompt. Undoing a copy restores the draft without changing the clipboard. Drafts are saved separately for each task and restored after reopening the app.
 
+**While the selected task is active, suggestions, Refresh phrases, and Expand are paused.** Pending generation is cancelled and late results are discarded. You can still edit, copy, clear, and undo your draft. Suggestions resume when the task becomes inactive if automatic suggestions are enabled; otherwise use Refresh phrases. Activity checks use Codex task/turn status plus start/finish markers from the local history path supplied by Codex, because a separate app-server connection may report a running task as not loaded. A Codex crash without a finish marker can conservatively leave a task paused; completing or stopping a subsequent turn in that task records a new lifecycle state.
+
 Suggestions stay stable while the pointer is over the phrase area. Move the pointer out to reveal waiting suggestions. Results based on an older draft become unclickable immediately. Use **Refresh phrases** to request another set.
 
 ### Expand shorthand
@@ -98,7 +100,7 @@ Click the sliders icon to adjust text size, phrase-button height, automatic sugg
 ## Context, privacy, and account usage
 
 - The selected conversation excerpts and your draft go to OpenAI for generation using your existing Codex ChatGPT sign-in and allowance. This is not an offline text predictor and does not switch to separately billed API access.
-- The app reads local task metadata/history through `codex app-server`, without resuming or writing to the selected task. Context refreshes every eight seconds.
+- The app reads local task metadata/history through `codex app-server`, without resuming or writing to the selected task. Context and task activity refresh approximately every two seconds, and activity is checked again before generation.
 - Long conversations use the first three and most recent 24 turns, with partial context indicated in the interface. Only user and assistant text is included; tool output, reasoning, and attachment contents are excluded. Earlier included text may be summarized for prediction.
 - Drafts and preferences are stored in `~/Library/Application Support/PromptCompanion/drafts.json`, with owner-only file permissions. This is local storage, not encryption. To reset saved drafts and preferences, quit the app and move this file to a safe backup location.
 - Prompt Companion does not log prompt text, capture the screen, monitor global keystrokes, or request macOS Accessibility access. Codex’s own account and retention behavior still applies.

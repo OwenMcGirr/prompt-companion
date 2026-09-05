@@ -19,6 +19,13 @@ struct CodexTask: Identifiable, Hashable {
 struct ContextSnapshot: Equatable {
     let messages: [ConversationMessage]
     let isPartial: Bool
+    var isActive: Bool = false
+
+    static func taskIsActive(thread: [String: Any], latestTurn: [String: Any]?) -> Bool {
+        // A separate app-server may report notLoaded for a task running elsewhere.
+        (thread["status"] as? [String: Any])?["type"] as? String == "active"
+            || latestTurn?["status"] as? String == "inProgress"
+    }
     var recent: [ConversationMessage] { ContextBuilder.bounded(Array(messages.suffix(12)), budget: 12000) }
     var earlier: [ConversationMessage] {
         let older = Array(messages.dropLast(min(12, messages.count)))
@@ -132,6 +139,12 @@ final class CompanionEngine: PredictionService {
         return ((result["data"] as? [[String: Any]] ?? []).compactMap(CodexTask.init), result["nextCursor"] as? String)
     }
 
+    private func taskIsActive(thread: [String: Any], latestTurn: [String: Any]?) throws -> Bool {
+        if ContextSnapshot.taskIsActive(thread: thread, latestTurn: latestTurn) { return true }
+        guard let path = thread["path"] as? String else { return false }
+        return try TaskActivity.fromRollout(at: path) ?? false
+    }
+
     func context(for id: String) async throws -> ContextSnapshot {
         let metadata = try await history.call("thread/read", ["threadId": id, "includeTurns": false])
         let thread = metadata["thread"] as? [String: Any] ?? [:]
@@ -145,11 +158,14 @@ final class CompanionEngine: PredictionService {
                 let ids = Set(chronological.compactMap { $0["id"] as? String })
                 chronological = (beginning["data"] as? [[String: Any]] ?? []).filter { !ids.contains($0["id"] as? String ?? "") } + chronological
             }
-            return ContextSnapshot(messages: ContextBuilder.messages(from: chronological), isPartial: partial)
+            return ContextSnapshot(messages: ContextBuilder.messages(from: chronological), isPartial: partial,
+                isActive: try taskIsActive(thread: thread, latestTurn: recent.first))
         }
         let result = try await history.call("thread/read", ["threadId": id, "includeTurns": true])
         let full = result["thread"] as? [String: Any] ?? [:]
-        return ContextSnapshot(messages: ContextBuilder.messages(from: full["turns"] as? [[String: Any]] ?? []), isPartial: false)
+        let turns = full["turns"] as? [[String: Any]] ?? []
+        return ContextSnapshot(messages: ContextBuilder.messages(from: turns), isPartial: false,
+            isActive: try taskIsActive(thread: full, latestTurn: turns.last))
     }
 
     private func predictionConfig() throws -> [String: Any] {

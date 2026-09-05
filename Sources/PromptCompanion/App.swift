@@ -91,7 +91,7 @@ struct CompanionView: View {
                 Button { model.expansionActive ? model.keepOriginal() : model.refreshPredictions() } label: {
                     Label(model.expansionActive ? "Keep original" : "Refresh phrases", systemImage: model.expansionActive ? "xmark" : "arrow.clockwise").font(.system(size: 14, weight: .medium))
                         .padding(.horizontal, 10).frame(height: 36)
-                }.buttonStyle(.plain).foregroundStyle(teal).disabled(model.selected == nil || model.isConnecting)
+                }.buttonStyle(.plain).foregroundStyle(teal).disabled(model.selected == nil || model.isConnecting || model.taskIsActive)
             }.frame(height: 40)
             VStack(spacing: 9) {
                 ForEach(0..<3) { index in
@@ -164,6 +164,7 @@ struct CompanionView: View {
 
     private func phrase(at index: Int) -> String {
         if let choices = model.clarification?.choices { return index < choices.count ? choices[index] : "Or keep your original words" }
+        if model.taskIsActive { return "Suggestions paused while this task is active" }
         if model.expansionActive { return "Preparing your expansion…" }
         if index < model.phrases.count { return model.phrases[index] }
         return model.selected == nil ? ["Choose a task to begin", "Suggestions will use its conversation", "Click a phrase to add it"][index] : "Waiting for a useful phrase…"

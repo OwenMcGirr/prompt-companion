@@ -69,6 +69,7 @@ final class CompanionModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var taskCursor: String?
     private var taskListRevision = 0
+    private var contextReadRevision = 0
     private var selectionRevision = 0
     private var connectingRevision = 0
     private var phraseWidth: CGFloat = 430
@@ -91,8 +92,10 @@ final class CompanionModel: ObservableObject {
         }
     }
 
-    var canInsert: Bool { !expansionActive && batch?.valid(for: draft, revision: revision) == true && batch?.phrases.isEmpty == false && context != nil }
-    var canExpand: Bool { !expansionActive && engine.connected && !isConnecting && selected != nil && context != nil && !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var taskIsActive: Bool { context?.isActive == true }
+    private var activityMessage: String { "Task active — suggestions paused until it finishes" }
+    var canInsert: Bool { !taskIsActive && !expansionActive && batch?.valid(for: draft, revision: revision) == true && batch?.phrases.isEmpty == false && context != nil }
+    var canExpand: Bool { !taskIsActive && !expansionActive && engine.connected && !isConnecting && selected != nil && context != nil && !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var connected: Bool { engine.connected }
     var modelName: String { engine.model }
     var expansionModelName: String { engine.expansionModel }
@@ -165,7 +168,7 @@ final class CompanionModel: ObservableObject {
             let snapshot = try await engine.context(for: task.id)
             guard selection == selectionRevision else { return }
             context = snapshot; contextDate = Date()
-            contextStatus = snapshot.isPartial ? "Recent conversation + opening messages" : "Conversation connected"
+            contextStatus = snapshot.isActive ? "Task active — generation paused" : (snapshot.isPartial ? "Recent conversation + opening messages" : "Conversation connected")
             status = "Ready when you are"
             schedulePrediction(immediate: true)
         } catch {
@@ -179,33 +182,39 @@ final class CompanionModel: ObservableObject {
         poll?.cancel()
         poll = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled, let self else { return }
                 await self.refreshContext()
             }
         }
     }
 
-    func refreshContext() async {
-        guard let selected, !isConnecting else { return }
+    @discardableResult
+    func refreshContext() async -> Bool {
+        guard let selected, !isConnecting else { return false }
+        contextReadRevision += 1
+        let read = contextReadRevision
         let selection = selectionRevision
         do {
             let snapshot = try await engine.context(for: selected.id)
-            guard selection == selectionRevision else { return }
+            guard selection == selectionRevision, read == contextReadRevision else { return false }
             contextDate = Date()
-            contextStatus = snapshot.isPartial ? "Recent conversation + opening messages" : "Conversation connected"
-            guard snapshot != context else { return }
+            contextStatus = snapshot.isActive ? "Task active — generation paused" : (snapshot.isPartial ? "Recent conversation + opening messages" : "Conversation connected")
+            guard snapshot != context else { return true }
             let cancelledExpansion = expansionActive
             invalidate(); context = snapshot; earlierSummary = ""
+            if snapshot.isActive { phrases = []; batch = nil }
             schedulePrediction()
-            if cancelledExpansion { status = "Conversation changed — click Expand again to use the latest context" }
+            if cancelledExpansion && !snapshot.isActive { status = "Conversation changed — click Expand again to use the latest context" }
+            return true
         } catch {
-            guard selection == selectionRevision else { return }
+            guard selection == selectionRevision, read == contextReadRevision else { return false }
             contextStatus = "Conversation refresh paused"
             if Date().timeIntervalSince(contextDate) > 30 {
                 invalidate(); context = nil
                 problem = "Couldn’t refresh this conversation. Reconnect to resume suggestions; your draft is safe."
             }
+            return false
         }
     }
 
@@ -233,7 +242,7 @@ final class CompanionModel: ObservableObject {
     }
 
     func insert(_ index: Int) {
-        guard !expansionActive, let batch, batch.valid(for: draft, revision: revision), batch.phrases.indices.contains(index),
+        guard canInsert, let batch, batch.valid(for: draft, revision: revision), batch.phrases.indices.contains(index),
               let next = batch.target.inserting(batch.phrases[index]) else { return }
         rememberUndo()
         insertedCharacters += max(0, next.text.count - draft.text.count)
@@ -305,6 +314,14 @@ final class CompanionModel: ObservableObject {
     }
 
     private func runExpansion(_ source: ExpansionSnapshot, resolution: ExpansionResolution?) async {
+        guard await refreshContext() else {
+            if source.revision == revision {
+                invalidate()
+                status = "Couldn’t check task activity — your original words are unchanged"
+            }
+            return
+        }
+        guard !Task.isCancelled, !taskIsActive, source.revision == revision else { return }
         do {
             let result = try await engine.expand(draft: source.draft.text, context: source.context,
                 title: source.task.title, earlierSummary: source.summary, resolution: resolution)
@@ -347,7 +364,7 @@ final class CompanionModel: ObservableObject {
     }
 
     private func present(_ candidate: SuggestionBatch) {
-        guard candidate.valid(for: draft, revision: revision) else { return }
+        guard !taskIsActive, candidate.valid(for: draft, revision: revision) else { return }
         if hovering { pendingBatch = candidate; return }
         // Never make a clickable insertion whose full text is hidden by ellipsis.
         let visible = candidate.phrases.filter(phraseFits)
@@ -380,7 +397,7 @@ final class CompanionModel: ObservableObject {
     }
 
     func refreshPredictions() {
-        guard !expansionActive else { return }
+        guard !taskIsActive, !expansionActive else { return }
         problem = nil
         invalidate()
         if context == nil, let selected { Task { await select(selected) } }
@@ -393,12 +410,14 @@ final class CompanionModel: ObservableObject {
         for window in NSApplication.shared.windows where window.identifier?.rawValue == "companion" {
             window.level = floating ? .floating : .normal
         }
+        if taskIsActive { status = activityMessage; return }
         if expansionActive { return }
         if !automatic { invalidate(); status = "Automatic suggestions paused" }
         else if !canInsert { schedulePrediction() }
     }
 
     private func schedulePrediction(immediate: Bool = false, force: Bool = false) {
+        guard !taskIsActive else { status = activityMessage; return }
         guard !expansionActive else { return }
         guard engine.connected, context != nil, selected != nil else { return }
         guard automatic || force else { status = "Click Refresh phrases when you’re ready"; return }
@@ -413,7 +432,12 @@ final class CompanionModel: ObservableObject {
     }
 
     private func runPrediction(version: Int) async {
-        guard let selected, let context, version == revision else { return }
+        // Recheck immediately before generation, including manual refresh requests.
+        guard await refreshContext() else {
+            if version == revision { status = "Couldn’t check task activity — refresh to try again" }
+            return
+        }
+        guard !Task.isCancelled, !taskIsActive, let selected, let context, version == revision else { return }
         let target = CompletionTarget(draft)
         isPredicting = true
         do {
