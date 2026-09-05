@@ -206,6 +206,11 @@ struct SettingsView: View {
                 .font(.system(size: 13)).foregroundStyle(.secondary)
             Text("Phrases: \(model.modelName)\nExpansion: \(model.expansionModelName)").font(.system(size: 11)).foregroundStyle(.secondary)
         }.padding(24).frame(width: 370)
+            .fixedSize(horizontal: false, vertical: true)
+            // The popover inherits the main window's fixed ink color unless reset.
+            // Use matching semantic colors so Settings follows macOS appearance.
+            .foregroundStyle(Color(nsColor: .labelColor))
+            .background(Color(nsColor: .windowBackgroundColor))
             .onChange(of: model.fontSize) { _, _ in model.settingsChanged() }
             .onChange(of: model.buttonHeight) { _, _ in model.settingsChanged() }
             .onChange(of: model.automatic) { _, _ in model.settingsChanged() }
