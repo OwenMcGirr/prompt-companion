@@ -1,4 +1,4 @@
-//! Development-only native experiment. No adapter has passed Codex acceptance.
+//! Single-use macOS clipboard paste, with additional development-only adapters.
 //! No keystroke logging, screen capture, telemetry, automatic sending, or retries.
 //! macOS observes one external left-click only while explicitly armed.
 use serde::{Deserialize, Serialize};
@@ -28,14 +28,32 @@ pub struct Status {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Request {
     Status,
-    Enable { value: bool },
-    ManualCodex { value: bool },
+    ArmPaste {
+        text: String,
+        revision: u64,
+        task_id: Option<String>,
+    },
+    Enable {
+        value: bool,
+    },
+    ManualCodex {
+        value: bool,
+    },
     Arm,
-    ArmClick { text: String, clipboard: bool },
+    ArmClick {
+        text: String,
+        clipboard: bool,
+    },
     Cancel,
     Capture,
-    Native { text: String, token: u64 },
-    Paste { text: String, token: u64 },
+    Native {
+        text: String,
+        token: u64,
+    },
+    Paste {
+        text: String,
+        token: u64,
+    },
 }
 pub trait TextInsertionService {
     fn capture(&mut self) -> Result<(), String>;
@@ -65,6 +83,15 @@ struct PendingClick {
     text: String,
     clipboard: bool,
     deadline: Instant,
+    identity: Option<(u64, Option<String>)>,
+}
+impl PendingClick {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn matches_identity(&self, revision: u64, task: Option<String>) -> bool {
+        self.identity
+            .as_ref()
+            .is_none_or(|id| id == &(revision, task))
+    }
 }
 struct Probe {
     enabled: bool,
@@ -136,6 +163,7 @@ impl Probe {
                 } else {
                     self.pending_click = Some(PendingClick {
                         text,
+                        identity: None,
                         clipboard,
                         deadline: Instant::now() + Duration::from_secs(30),
                     });
@@ -222,9 +250,70 @@ impl Probe {
 }
 thread_local! {static PROBE:RefCell<Probe> = RefCell::new(Probe::default());}
 /// Always executed on the Tauri main thread, including COM/UIA access.
+pub fn cancel_pending() {
+    PROBE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.pending_click.is_some() || state.armed {
+            state.apply(Request::Cancel);
+            #[cfg(target_os = "macos")]
+            macos::stop_click_monitor();
+        }
+    });
+}
 pub fn execute(request: Request, app: tauri::AppHandle) -> Status {
+    use tauri::Manager;
+    let mut identity = None;
+    let request = if let Request::ArmPaste {
+        text,
+        revision,
+        task_id,
+    } = request
+    {
+        let valid = app
+            .state::<crate::runtime::Service>()
+            .view
+            .lock()
+            .is_ok_and(|v| {
+                v.revision == revision
+                    && v.draft.text == text
+                    && v.selected.as_ref().map(|t| t.id.clone()) == task_id
+            });
+        if !valid || !cfg!(target_os = "macos") {
+            cancel_pending();
+            return PROBE.with(|s| {
+                let mut s = s.borrow_mut();
+                s.message = "Draft changed. Click Paste again when ready.".into();
+                s.apply(Request::Status)
+            });
+        }
+        let already_armed = PROBE.with(|s| s.borrow().pending_click.is_some());
+        if already_armed {
+            return PROBE.with(|s| s.borrow_mut().apply(Request::Status));
+        }
+        PROBE.with(|s| {
+            let mut s = s.borrow_mut();
+            s.enabled = true;
+            s.manual_codex = true;
+        });
+        identity = Some((revision, task_id));
+        Request::ArmClick {
+            text,
+            clipboard: true,
+        }
+    } else {
+        request
+    };
     let start_click = matches!(request, Request::ArmClick { .. });
-    let status = PROBE.with(|state| state.borrow_mut().apply(request));
+    let status = PROBE.with(|state| {
+        let mut state = state.borrow_mut();
+        let status = state.apply(request);
+        if let Some(pending) = state.pending_click.as_mut() {
+            if identity.is_some() {
+                pending.identity = identity;
+            }
+        }
+        status
+    });
     #[cfg(target_os = "macos")]
     {
         if !status.click_armed {
@@ -253,14 +342,28 @@ fn clicked(app: &tauri::AppHandle, token: u64, x: f64, y: f64) {
         .view
         .lock()
         .ok()
-        .map(|v| v.draft.text.clone());
+        .map(|v| {
+            (
+                v.draft.text.clone(),
+                v.revision,
+                v.selected.as_ref().map(|t| t.id.clone()),
+            )
+        });
     PROBE.with(|state| {
         let mut state = state.borrow_mut();
         if token != state.token {
             return;
         }
         macos::stop_click_monitor();
-        if let Some(draft) = draft {
+        if let Some((draft, revision, task)) = draft {
+            if state
+                .pending_click
+                .as_ref()
+                .is_some_and(|p| !p.matches_identity(revision, task))
+            {
+                state.apply(Request::Cancel);
+                return;
+            }
             state.clicked(token, x, y, &draft);
         } else {
             state.reset();
@@ -364,6 +467,7 @@ mod tests {
             enabled: true,
             pending_click: Some(PendingClick {
                 text: "TEST ".into(),
+                identity: None,
                 clipboard: false,
                 deadline: Instant::now() + Duration::from_secs(30),
             }),
@@ -393,6 +497,19 @@ mod tests {
         probe.pending_click.as_mut().unwrap().deadline = Instant::now() - Duration::from_secs(1);
         probe.clicked(0, 10., 20., "TEST ");
         assert_eq!(calls.get(), 0);
+    }
+    #[test]
+    fn production_identity_rejects_switch_away_and_back_or_edit_then_undo() {
+        let pending = PendingClick {
+            text: "same".into(),
+            clipboard: true,
+            deadline: Instant::now() + Duration::from_secs(30),
+            identity: Some((7, Some("task-a".into()))),
+        };
+        assert!(pending.matches_identity(7, Some("task-a".into())));
+        assert!(!pending.matches_identity(8, Some("task-a".into())));
+        assert!(!pending.matches_identity(7, Some("task-b".into())));
+        assert!(!pending.matches_identity(7, None));
     }
     #[test]
     fn background_capture_cannot_trigger_click_insertion() {

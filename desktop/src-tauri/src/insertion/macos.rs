@@ -116,12 +116,14 @@ struct Target {
 pub struct Mac {
     target: Option<Target>,
     manual_codex: bool,
+    clicked_target: bool,
 }
 impl Mac {
     pub fn new(manual_codex: bool) -> Self {
         Self {
             target: None,
             manual_codex,
+            clicked_target: false,
         }
     }
 }
@@ -181,6 +183,7 @@ impl TextInsertionService for Mac {
         // window, toolbar, another editor, or scrollbar is never sufficient.
         for _ in 0..12 {
             if unsafe { CFEqual(hit.0, target.element.0) } {
+                self.clicked_target = true;
                 return Ok(());
             }
             match attr(hit.0, "AXParent") {
@@ -195,6 +198,7 @@ impl TextInsertionService for Mac {
         )
     }
     fn capture(&mut self) -> Result<(), String> {
+        self.clicked_target = false;
         let element = focused()?;
         let mut pid = 0;
         if unsafe { AXUIElementGetPid(element.0, &mut pid) } != 0 {
@@ -215,10 +219,7 @@ impl TextInsertionService for Mac {
         let allowed = ["com.apple.TextEdit", "com.google.Chrome"].contains(&bundle.as_str())
             || (self.manual_codex && bundle == "com.openai.codex");
         if !allowed {
-            return Err(
-                "This destination is outside the development test allowlist. Use Copy Prompt."
-                    .into(),
-            );
+            return Err("This destination is unsupported. Use Copy instead.".into());
         }
         let role = text(attr(element.0, "AXRole")?.0)?;
         let subrole = attr(element.0, "AXSubrole")
@@ -289,7 +290,9 @@ impl TextInsertionService for Mac {
         let app = NSRunningApplication::runningApplicationWithProcessIdentifier(t.pid)
             .ok_or("Destination closed")?;
         #[allow(deprecated)]
-        if !app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps) {
+        if !self.clicked_target
+            && !app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps)
+        {
             return Err("Could not restore destination focus.".into());
         }
         for _ in 0..30 {
@@ -310,12 +313,21 @@ impl TextInsertionService for Mac {
             arboard::Clipboard::new()
                 .and_then(|mut c| c.set_text(value.to_string()))
                 .map_err(|_| "Clipboard write failed; no paste attempted.")?;
+            if !focused().is_ok_and(|f| unsafe { CFEqual(f.0, t.element.0) })
+                || selection(t.element.0)? != t.range
+                || fingerprint(&text(attr(t.element.0, "AXValue")?.0)?) != t.hash
+            {
+                return Err("Destination changed. Clipboard contains your draft, but no paste was attempted.".into());
+            }
             unsafe {
-                for down in [true, false] {
-                    let event = Object(CGEventCreateKeyboardEvent(ptr::null(), 9, down));
-                    if event.0.is_null() {
-                        return Err("Paste outcome uncertain. Do not retry automatically.".into());
-                    }
+                // Allocate both events before posting either: allocation failure
+                // must never leave an unmatched key-down at the destination.
+                let down = Object(CGEventCreateKeyboardEvent(ptr::null(), 9, true));
+                let up = Object(CGEventCreateKeyboardEvent(ptr::null(), 9, false));
+                if down.0.is_null() || up.0.is_null() {
+                    return Err("Could not prepare paste. No paste was attempted.".into());
+                }
+                for event in [&down, &up] {
                     CGEventSetFlags(event.0, 1 << 20);
                     CGEventPost(0, event.0);
                 }
@@ -334,8 +346,11 @@ impl TextInsertionService for Mac {
         let end = crate::core::byte_offset(&before, (range.location + range.length) as usize);
         let expected = format!("{}{}{}", &before[..start], value, &before[end..]);
         for _ in 0..30 {
-            if text(attr(t.element.0, "AXValue")?.0)? == expected {
-                return Ok("Text verified at the destination. Draft kept. Check destination Undo before approving this adapter.".into());
+            if attr(t.element.0, "AXValue")
+                .and_then(|v| text(v.0))
+                .is_ok_and(|v| v == expected)
+            {
+                return Ok("Pasted into Codex. Your draft is kept. Nothing was sent.".into());
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -364,6 +379,8 @@ pub fn start_click_monitor(app: tauri::AppHandle, token: u64) -> Result<(), Stri
         // AppKit delivers these callbacks on the main thread. Observe only one
         // external left mouse-up; no keys, mouse moves, or persistent logging.
         if seen.replace(true) {
+            // A second external click before the queued paste invalidates the first.
+            super::cancel_pending();
             return;
         }
         let cg = unsafe { event.as_ref() }.CGEvent();

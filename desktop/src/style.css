@@ -327,3 +327,28 @@ textarea {
 footer {
   line-height: 1.3;
 }
+
+.actions:has(.paste-action) {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.paste-action {
+  flex: 1;
+  min-width: 260px;
+}
+.paste-action > button {
+  width: 100%;
+  min-height: max(54px, var(--button-height, 54px));
+}
+.paste-action p {
+  font-size: 14px;
+}
+.paste-action summary {
+  min-height: 48px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.paste-action summary:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}

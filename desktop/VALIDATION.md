@@ -42,3 +42,15 @@ The first user-operated Codex trial was blocked before capture by stale Accessib
 ## Next-click insertion experiment
 
 A user-operated capture subsequently identified Codex (displayed as ChatGPT), confirming permission and field discovery. No successful insertion or destination Undo has been established. The macOS development build now offers an explicit next-field-click action that captures and attempts insertion while the clicked destination is still active. A temporary left-mouse-up monitor, hit-test/focused-field comparison, draft snapshot validation, 30-second expiry and one-use attempt protect this route. Passive capture never triggers insertion. Default packages still exclude this experiment; Windows next-click mode is unavailable.
+
+## Main paste action — 2026-09-06
+
+The user reported that native insertion produced no text, then explicitly tried **Paste on next field click** and reported “That works.” At the user's request, clipboard paste is now the main macOS action in normal builds. The draft remains intact; Copy remains under “Copy instead.” Windows stays on Copy. Earlier development-only descriptions above are historical.
+
+Added protection against stale revisions/tasks, duplicate arm requests, second external clicks before dispatch, changed focus after clipboard preparation, and partial keyboard-event allocation. Composer actions cancel pending attempts. No automatic retry or native fallback. Verification failures after dispatch are always reported as uncertain, including inaccessible/closed fields.
+
+The reported successful trial does not establish repeated reliability, destination Undo, selection/emoji/multiline behavior, or permission denial/revocation coverage. These remain user-operated Codex checks. Accessibility authorization can be invalidated by ad-hoc rebuilds; stable distribution signing remains outstanding.
+
+The running app still displayed an uncertain verification result after the user-reported successful clipboard paste. Therefore automatic post-paste verification has not been established for Codex; the app preserves the draft and reports uncertainty rather than claiming success.
+
+Local verification for this change: 52 Rust tests passed (two opt-in live-generation tests skipped), 18 frontend tests passed, TypeScript/Vite build passed, and feature-enabled Clippy passed with warnings denied. The normal macOS app bundle built and was opened. CUA verified the main paste button, disabled-empty state, readable dark appearance, and left-click access to the secondary Copy control. The rebuilt bundle was re-added to Accessibility and its toggle verified on. No agent-operated Codex insertion was performed. Windows CI and additional user-operated Codex trials remain separate evidence.

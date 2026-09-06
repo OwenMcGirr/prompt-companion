@@ -1,6 +1,6 @@
 # Prompt Companion
 
-**Rust/Tauri preview:** A new macOS-and-Windows composer is available in [`desktop`](desktop/README.md), with React/TypeScript UI, a Rust backend, separate preview storage, and one-time Mac draft import. See its [build instructions](desktop/README.md#build-run-and-test) and [validation status](desktop/VALIDATION.md). Direct insertion remains a disabled development experiment. The Swift app documented below remains available during preview acceptance.
+**Rust/Tauri preview:** A new macOS-and-Windows composer is available in [`desktop`](desktop/README.md), with React/TypeScript UI, a Rust backend, separate preview storage, and one-time Mac draft import. See its [build instructions](desktop/README.md#build-run-and-test) and [validation status](desktop/VALIDATION.md). The macOS composer now offers **Paste on next field click** for Codex, with Copy as a fallback; Windows retains Copy Prompt. See the desktop guide for Accessibility setup and current validation limits. The Swift app documented below remains available during preview acceptance.
 
 A native macOS app that helps you write Codex prompts with less typing. Choose a task, type a few words, and click useful phrase suggestions—or expand shorthand into a fuller, editable prompt using that task’s conversation.
 

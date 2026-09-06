@@ -1,7 +1,7 @@
 pub mod activity;
 pub mod core;
 pub mod engine;
-#[cfg(feature = "insertion-prototype")]
+#[cfg(any(target_os = "macos", feature = "insertion-prototype"))]
 pub mod insertion;
 pub mod model;
 pub mod rpc;
@@ -19,8 +19,16 @@ fn snapshot(service: tauri::State<'_, runtime::Service>) -> Result<model::View, 
 #[tauri::command]
 fn action(
     request: model::Request,
+    app: tauri::AppHandle,
     service: tauri::State<'_, runtime::Service>,
 ) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", feature = "insertion-prototype"))]
+    if !matches!(request.action, model::Action::Hover { .. }) {
+        app.run_on_main_thread(insertion::cancel_pending)
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "macos", feature = "insertion-prototype")))]
+    let _ = app;
     service
         .tx
         .send(request)
@@ -31,10 +39,19 @@ async fn insertion_probe(
     app: tauri::AppHandle,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(feature = "insertion-prototype")]
+    #[cfg(any(target_os = "macos", feature = "insertion-prototype"))]
     {
         let request: insertion::Request =
             serde_json::from_value(request).map_err(|e| e.to_string())?;
+        #[cfg(not(feature = "insertion-prototype"))]
+        if !matches!(
+            request,
+            insertion::Request::Status
+                | insertion::Request::Cancel
+                | insertion::Request::ArmPaste { .. }
+        ) {
+            return Err("This insertion method is unavailable.".into());
+        }
         let (tx, rx) = tokio::sync::oneshot::channel();
         let probe_app = app.clone();
         app.run_on_main_thread(move || {
@@ -47,7 +64,7 @@ async fn insertion_probe(
         rx.await
             .map_err(|_| "Insertion experiment stopped".to_string())?
     }
-    #[cfg(not(feature = "insertion-prototype"))]
+    #[cfg(not(any(target_os = "macos", feature = "insertion-prototype")))]
     {
         let _ = (app, request);
         Ok(

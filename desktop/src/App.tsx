@@ -4,7 +4,7 @@ import type { Action, Draft, View, Settings } from "./types";
 import { bridge as nativeBridge } from "./bridge";
 import type { Bridge } from "./bridge";
 import "./style.css";
-import InsertionProbe from "./InsertionProbe";
+import PasteAction from "./PasteAction";
 export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
   const [view, setView] = useState<View | null>(null),
     [draft, setDraft] = useState<Draft>({
@@ -313,30 +313,28 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
         <button disabled={!draft.text} onClick={() => send({ type: "clear" })}>
           Clear
         </button>
-        <button
-          className="primary"
-          disabled={!draft.text.trim()}
-          onClick={() => send({ type: "copy" })}
-        >
-          {view.copied ? "✓ Copied" : "Copy Prompt"}
-        </button>
+        {bridge === nativeBridge ? (
+          <PasteAction
+            text={draft.text}
+            revision={view.revision}
+            taskId={view.selected?.id ?? null}
+            ready={view.acknowledged >= sequence.current}
+            onCopy={() => send({ type: "copy" })}
+          />
+        ) : (
+          <button
+            className="primary"
+            disabled={!draft.text.trim()}
+            onClick={() => send({ type: "copy" })}
+          >
+            {view.copied ? "✓ Copied" : "Copy Prompt"}
+          </button>
+        )}
       </div>
       <footer>
         <p>{view.contextStatus}</p>
-        <p>Copy here, then paste into Codex. Nothing sends automatically.</p>
+        <p>You choose where to paste. Nothing sends automatically.</p>
       </footer>
-      {bridge === nativeBridge && (
-        <InsertionProbe
-          text={draft.text}
-          onUseTestText={() => {
-            focusAfter.current = true;
-            send({
-              type: "edit",
-              draft: { text: "TEST ", cursor: 5, selectionLength: 0 },
-            });
-          }}
-        />
-      )}
       <dialog
         ref={modal}
         aria-label={dialog === "tasks" ? "Choose your context" : "Settings"}
