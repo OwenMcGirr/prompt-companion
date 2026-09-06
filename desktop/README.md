@@ -88,6 +88,10 @@ Writes use temporary files and atomic replacement. Mac directories/files are res
 
 The selected conversation excerpts and draft go to OpenAI through the existing Codex account. Tool output, hidden reasoning, and attachments are excluded. Long context retains opening requirements and recent turns. Generation uses isolated ephemeral transports with executable features/MCP servers disabled, a read-only sandbox, a private tool-restricted model catalog, and rejection of interactive server requests. No original Codex configuration is edited.
 
+## Keyboard navigation
+
+Press Down at the end of the draft (or Up at its start) to focus a suggestion. Use any arrow key to move between enabled suggestions, wrapping at either end. Enter accepts the highlighted phrase or clarification choice and returns focus to the draft. Escape returns without accepting. Suggestions stay stable while keyboard-focused, just as they do while hovered. Modified arrows, IME composition, and vertical movement within multiline draft text retain normal editing behavior. Left-click selection remains available.
+
 ## Paste into Codex on macOS
 
 **Paste on next field click** is included in normal macOS builds. No development switches are required. Grant the running app Accessibility permission in **System Settings → Privacy & Security → Accessibility**. It observes one external left click only while armed, validates the clicked editable field, then performs one clipboard paste. It never presses Enter. Native selected-text insertion is no longer offered in the normal interface.

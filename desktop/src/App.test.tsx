@@ -9,6 +9,7 @@ import {
   act,
 } from "@testing-library/react";
 import App from "./App";
+import userEvent from "@testing-library/user-event";
 import type { View, Action } from "./types";
 import type { Bridge } from "./bridge";
 beforeAll(() => {
@@ -251,4 +252,80 @@ describe("composer interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+});
+
+it("navigates suggestions with arrows, wraps, accepts with Enter, and returns draft focus", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  render(<App bridge={f.bridge} />);
+  const draft = await screen.findByRole("textbox");
+  draft.focus();
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Insert: Fix login" }),
+  );
+  await user.keyboard("{ArrowLeft}");
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Insert: Explain error" }),
+  );
+  await user.keyboard("{ArrowRight}{ArrowDown}{Enter}");
+  await waitFor(() =>
+    expect(
+      f.calls.filter((c) => c.action.type === "insert").map((c) => c.action),
+    ).toEqual([{ type: "insert", index: 1, revision: 2 }]),
+  );
+  expect(document.activeElement).toBe(draft);
+  expect(f.calls.some((c) => c.action.type === "hover" && c.action.value)).toBe(
+    true,
+  );
+});
+it("Escape exits navigation and paused suggestions do not capture arrows", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  render(<App bridge={f.bridge} />);
+  const draft = await screen.findByRole("textbox");
+  draft.focus();
+  await user.keyboard("{ArrowDown}{Escape}");
+  expect(document.activeElement).toBe(draft);
+  f.update({ active: true, canInsert: false });
+  await user.keyboard("{ArrowDown}{Enter}");
+  expect(document.activeElement).toBe(draft);
+  expect(f.calls.some((c) => c.action.type === "insert")).toBe(false);
+});
+it("preserves multiline caret keys, modified arrows and IME composition", async () => {
+  const f = fixture();
+  render(<App bridge={f.bridge} />);
+  const draft = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+  f.update({ draft: { text: "one\ntwo", cursor: 2, selectionLength: 0 } });
+  draft.focus();
+  draft.setSelectionRange(2, 2);
+  expect(fireEvent.keyDown(draft, { key: "ArrowDown" })).toBe(true);
+  draft.setSelectionRange(7, 7);
+  expect(fireEvent.keyDown(draft, { key: "ArrowDown", shiftKey: true })).toBe(
+    true,
+  );
+  fireEvent.compositionStart(draft);
+  expect(
+    fireEvent.keyDown(draft, { key: "ArrowDown", isComposing: true }),
+  ).toBe(true);
+  expect(document.activeElement).toBe(draft);
+});
+it("navigates clarification choices and skips the disabled third row", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  render(<App bridge={f.bridge} />);
+  const draft = await screen.findByRole("textbox");
+  f.update({
+    phase: "clarification",
+    canInsert: false,
+    clarification: { question: "Which?", choices: ["First", "Second"] },
+  });
+  draft.focus();
+  await user.keyboard("{ArrowUp}{ArrowDown}{Enter}");
+  await waitFor(() =>
+    expect(
+      f.calls.some((c) => c.action.type === "choose" && c.action.index === 0),
+    ).toBe(true),
+  );
+  expect(document.activeElement).toBe(draft);
 });

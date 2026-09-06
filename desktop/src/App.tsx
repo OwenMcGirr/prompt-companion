@@ -15,6 +15,8 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
     [dialog, setDialog] = useState<"tasks" | "settings" | null>(null),
     [search, setSearch] = useState(""),
     [failure, setFailure] = useState("");
+  const phrases = useRef<HTMLDivElement>(null);
+  const pointerOnPhrases = useRef(false);
   const editor = useRef<HTMLTextAreaElement>(null),
     modal = useRef<HTMLDialogElement>(null),
     sequence = useRef(0),
@@ -143,6 +145,26 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
       send({ type: "edit", draft: d });
     }
   }
+  function navigatePhrases(direction: number, fromDraft = false) {
+    if (pendingDraft.current > (view?.acknowledged ?? 0)) return false;
+    const buttons = Array.from(
+      phrases.current?.querySelectorAll<HTMLButtonElement>(
+        "button:not(:disabled)",
+      ) ?? [],
+    );
+    if (!buttons.length) return false;
+    const current = fromDraft
+      ? -1
+      : buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const index =
+      current < 0
+        ? direction > 0
+          ? 0
+          : buttons.length - 1
+        : (current + direction + buttons.length) % buttons.length;
+    buttons[index].focus();
+    return true;
+  }
   function settings(change: Partial<Settings>) {
     if (view)
       send({ type: "settings", settings: { ...view.settings, ...change } });
@@ -231,6 +253,27 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
           edit(e.currentTarget);
         }}
         onKeyDown={(e) => {
+          if (composing.current || e.nativeEvent.isComposing) return;
+          if (
+            !e.metaKey &&
+            !e.ctrlKey &&
+            !e.altKey &&
+            !e.shiftKey &&
+            (e.key === "ArrowDown" || e.key === "ArrowUp")
+          ) {
+            // Preserve vertical caret movement inside a multiline draft.
+            const field = e.currentTarget;
+            const atEdge =
+              e.key === "ArrowDown"
+                ? field.selectionEnd === field.value.length
+                : field.selectionStart === 0;
+            if (
+              atEdge &&
+              field.selectionStart === field.selectionEnd &&
+              navigatePhrases(e.key === "ArrowDown" ? 1 : -1, true)
+            )
+              e.preventDefault();
+          }
           if (
             (e.metaKey || e.ctrlKey) &&
             e.key.toLowerCase() === "z" &&
@@ -255,8 +298,52 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
       </div>
       <div
         className="phrases"
-        onPointerEnter={() => send({ type: "hover", value: true })}
-        onPointerLeave={() => send({ type: "hover", value: false })}
+        ref={phrases}
+        role="group"
+        aria-label="Suggestions"
+        aria-describedby="suggestion-keys"
+        onPointerEnter={() => {
+          pointerOnPhrases.current = true;
+          send({ type: "hover", value: true });
+        }}
+        onPointerLeave={() => {
+          pointerOnPhrases.current = false;
+          if (!phrases.current?.contains(document.activeElement))
+            send({ type: "hover", value: false });
+        }}
+        onFocus={() => send({ type: "hover", value: true })}
+        onBlur={(e) => {
+          if (
+            !e.currentTarget.contains(e.relatedTarget as Node | null) &&
+            !pointerOnPhrases.current
+          )
+            send({ type: "hover", value: false });
+        }}
+        onKeyDown={(e) => {
+          if (
+            e.nativeEvent.isComposing ||
+            e.metaKey ||
+            e.ctrlKey ||
+            e.altKey ||
+            e.shiftKey
+          )
+            return;
+          if (
+            ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"].includes(e.key)
+          ) {
+            if (
+              navigatePhrases(
+                e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1,
+              )
+            )
+              e.preventDefault();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            editor.current?.focus();
+          } else if (e.key === "Enter" && e.repeat) {
+            e.preventDefault();
+          }
+        }}
       >
         {[0, 1, 2].map((i) => {
           const label = rowLabels[i] ?? "Or keep your original words";
@@ -273,13 +360,14 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
                   ? `${view.clarification ? "Choose meaning" : "Insert"}: ${label}`
                   : label
               }
-              onClick={() =>
+              onClick={() => {
                 send({
                   type: view.clarification ? "choose" : "insert",
                   index: i,
                   revision: view.revision,
-                })
-              }
+                });
+                editor.current?.focus();
+              }}
             >
               <span className="number" aria-hidden>
                 {i + 1}
@@ -290,6 +378,10 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
           );
         })}
       </div>
+      <p id="suggestion-keys" className="secondary keyboard-help">
+        At the end of your draft, press ↓ to highlight a suggestion. Use arrow
+        keys to move, Enter to accept, or Esc to return to typing.
+      </p>
       <div className="status">
         <p role="status">
           {failure || view.storageProblem || view.problem || view.status}
