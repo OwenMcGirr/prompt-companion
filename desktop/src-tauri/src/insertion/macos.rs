@@ -1,7 +1,17 @@
 use super::{fingerprint, TextInsertionService};
-use objc2_app_kit::{NSApplicationActivationOptions, NSPasteboard, NSRunningApplication};
+use block2::RcBlock;
+use objc2::{rc::Retained, runtime::AnyObject};
+use objc2_app_kit::{
+    NSApplicationActivationOptions, NSEvent, NSEventMask, NSPasteboard, NSRunningApplication,
+};
+use std::cell::{Cell, RefCell};
 use std::{ffi::c_void, ptr, time::Duration};
 type Ref = *const c_void;
+#[repr(C)]
+struct Point {
+    x: f64,
+    y: f64,
+}
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Range {
@@ -12,6 +22,8 @@ struct Range {
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
     fn AXUIElementCreateSystemWide() -> Ref;
+    fn AXUIElementCopyElementAtPosition(e: Ref, x: f32, y: f32, out: *mut Ref) -> i32;
+    fn CGEventGetLocation(event: Ref) -> Point;
     fn AXUIElementCopyAttributeValue(e: Ref, key: Ref, value: *mut Ref) -> i32;
     fn AXUIElementIsAttributeSettable(e: Ref, key: Ref, value: *mut bool) -> i32;
     fn AXUIElementSetAttributeValue(e: Ref, key: Ref, value: Ref) -> i32;
@@ -133,6 +145,54 @@ impl TextInsertionService for Mac {
                 t.name, t.range.location, t.range.length
             )
         })
+    }
+    fn capture_clicked(&mut self, x: f64, y: f64) -> Result<(), String> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err("Click position unavailable. Nothing was inserted.".into());
+        }
+        self.capture()?;
+        let target = self
+            .target
+            .as_ref()
+            .ok_or("No eligible clicked field. Nothing was inserted.")?;
+        if self.manual_codex {
+            let bundle = NSRunningApplication::runningApplicationWithProcessIdentifier(target.pid)
+                .and_then(|app| app.bundleIdentifier())
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            if bundle != "com.openai.codex" {
+                self.target = None;
+                return Err(
+                    "This attempt was for Codex. The click was elsewhere; nothing was inserted."
+                        .into(),
+                );
+            }
+        }
+        let system = Object(unsafe { AXUIElementCreateSystemWide() });
+        let mut hit = ptr::null();
+        if unsafe { AXUIElementCopyElementAtPosition(system.0, x as f32, y as f32, &mut hit) } != 0
+            || hit.is_null()
+        {
+            self.target = None;
+            return Err("Cannot identify the clicked field. Nothing was inserted.".into());
+        }
+        let mut hit = Object(hit);
+        // A click on text inside the focused editor is valid. A click on its
+        // window, toolbar, another editor, or scrollbar is never sufficient.
+        for _ in 0..12 {
+            if unsafe { CFEqual(hit.0, target.element.0) } {
+                return Ok(());
+            }
+            match attr(hit.0, "AXParent") {
+                Ok(parent) => hit = parent,
+                Err(_) => break,
+            }
+        }
+        self.target = None;
+        Err(
+            "The clicked control does not match the focused editable field. Nothing was inserted."
+                .into(),
+        )
     }
     fn capture(&mut self) -> Result<(), String> {
         let element = focused()?;
@@ -284,4 +344,52 @@ impl TextInsertionService for Mac {
                 .into(),
         )
     }
+}
+
+thread_local! { static CLICK_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) }; }
+pub fn stop_click_monitor() {
+    let monitor = CLICK_MONITOR.with(|slot| slot.borrow_mut().take());
+    if let Some(monitor) = monitor {
+        unsafe { NSEvent::removeMonitor(&monitor) };
+    }
+}
+pub fn start_click_monitor(app: tauri::AppHandle, token: u64) -> Result<(), String> {
+    stop_click_monitor();
+    if !unsafe { AXIsProcessTrusted() } {
+        return Err("Accessibility permission is not granted. Nothing was armed.".into());
+    }
+    let click_app = app.clone();
+    let seen = Cell::new(false);
+    let handler = RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
+        // AppKit delivers these callbacks on the main thread. Observe only one
+        // external left mouse-up; no keys, mouse moves, or persistent logging.
+        if seen.replace(true) {
+            return;
+        }
+        let cg = unsafe { event.as_ref() }.CGEvent();
+        let point =
+            cg.map(|event| unsafe { CGEventGetLocation(std::ptr::from_ref(&*event).cast()) });
+        let app = click_app.clone();
+        tauri::async_runtime::spawn(async move {
+            // Let the destination finish handling the actual click/selection.
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            let callback_app = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Some(point) = point {
+                    super::clicked(&callback_app, token, point.x, point.y);
+                } else {
+                    super::expire_click(token);
+                }
+            });
+        });
+    });
+    let monitor =
+        NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::LeftMouseUp, &handler)
+            .ok_or("Could not listen for the next click. Nothing was armed.")?;
+    CLICK_MONITOR.with(|slot| *slot.borrow_mut() = Some(monitor));
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let _ = app.run_on_main_thread(move || super::expire_click(token));
+    });
+    Ok(())
 }

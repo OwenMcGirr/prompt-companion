@@ -13,6 +13,8 @@ const base: ProbeStatus = {
   available: true,
   enabled: false,
   armed: false,
+  click_armed: false,
+  click_available: true,
   manual_codex: false,
   manual_codex_available: true,
   token: 4,
@@ -115,4 +117,38 @@ it("polls an armed native capture even when web-view focus remains true", async 
   await waitFor(() => expect(call).toHaveBeenCalledWith({ kind: "capture" }));
   expect(focused).not.toHaveBeenCalled();
   focused.mockRestore();
+});
+
+it("arms one explicit next-click insertion without immediate insertion", async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce({ ...base, enabled: true })
+    .mockResolvedValue({ ...base, enabled: true, click_armed: true });
+  render(<InsertionProbe text="TEST " call={call} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Insert on next field click" }),
+  );
+  await waitFor(() =>
+    expect(call).toHaveBeenCalledWith({
+      kind: "armClick",
+      text: "TEST ",
+      clipboard: false,
+    }),
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Paste on next field click",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    call.mock.calls.some(([request]) =>
+      ["native", "paste", "capture"].includes(request.kind),
+    ),
+  ).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Cancel waiting insertion" }),
+  );
+  await waitFor(() => expect(call).toHaveBeenCalledWith({ kind: "cancel" }));
 });

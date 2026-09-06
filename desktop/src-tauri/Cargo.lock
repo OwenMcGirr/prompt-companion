@@ -2693,6 +2693,7 @@ name = "prompt-companion-preview"
 version = "0.2.0"
 dependencies = [
  "arboard",
+ "block2",
  "dirs",
  "objc2",
  "objc2-app-kit",

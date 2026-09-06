@@ -36,9 +36,12 @@ async fn insertion_probe(
         let request: insertion::Request =
             serde_json::from_value(request).map_err(|e| e.to_string())?;
         let (tx, rx) = tokio::sync::oneshot::channel();
+        let probe_app = app.clone();
         app.run_on_main_thread(move || {
-            let _ = tx
-                .send(serde_json::to_value(insertion::execute(request)).map_err(|e| e.to_string()));
+            let _ = tx.send(
+                serde_json::to_value(insertion::execute(request, probe_app))
+                    .map_err(|e| e.to_string()),
+            );
         })
         .map_err(|e| e.to_string())?;
         rx.await

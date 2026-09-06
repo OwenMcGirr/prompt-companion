@@ -1,9 +1,11 @@
 //! Development-only native experiment. No adapter has passed Codex acceptance.
-//! No global hooks, screen capture, telemetry, automatic sending, or retries.
+//! No keystroke logging, screen capture, telemetry, automatic sending, or retries.
+//! macOS observes one external left-click only while explicitly armed.
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     hash::{Hash, Hasher},
+    time::{Duration, Instant},
 };
 #[cfg(target_os = "macos")]
 mod macos;
@@ -14,6 +16,8 @@ pub struct Status {
     pub available: bool,
     pub enabled: bool,
     pub armed: bool,
+    pub click_armed: bool,
+    pub click_available: bool,
     pub manual_codex: bool,
     pub manual_codex_available: bool,
     pub token: u64,
@@ -27,12 +31,17 @@ pub enum Request {
     Enable { value: bool },
     ManualCodex { value: bool },
     Arm,
+    ArmClick { text: String, clipboard: bool },
+    Cancel,
     Capture,
     Native { text: String, token: u64 },
     Paste { text: String, token: u64 },
 }
 pub trait TextInsertionService {
     fn capture(&mut self) -> Result<(), String>;
+    fn capture_clicked(&mut self, _x: f64, _y: f64) -> Result<(), String> {
+        Err("Click insertion is unsupported on this platform.".into())
+    }
     fn destination(&self) -> Option<String>;
     fn insert(&mut self, text: &str, clipboard: bool) -> Result<String, String>;
 }
@@ -52,9 +61,15 @@ fn platform(manual_codex: bool) -> Box<dyn TextInsertionService> {
     #[cfg(not(any(target_os = "macos", windows)))]
     compile_error!("Insertion experiment supports macOS and Windows only");
 }
+struct PendingClick {
+    text: String,
+    clipboard: bool,
+    deadline: Instant,
+}
 struct Probe {
     enabled: bool,
     armed: bool,
+    pending_click: Option<PendingClick>,
     manual_codex: bool,
     token: u64,
     ready: bool,
@@ -66,6 +81,7 @@ impl Default for Probe {
         Self {
             enabled: false,
             armed: false,
+            pending_click: None,
             manual_codex: false,
             token: 0,
             ready: false,
@@ -77,11 +93,20 @@ impl Default for Probe {
 impl Probe {
     fn reset(&mut self) {
         self.armed = false;
+        self.pending_click = None;
         self.ready = false;
         self.token += 1;
         self.service = platform(self.manual_codex);
     }
     fn apply(&mut self, request: Request) -> Status {
+        if self
+            .pending_click
+            .as_ref()
+            .is_some_and(|p| Instant::now() >= p.deadline)
+        {
+            self.reset();
+            self.message = "Click insertion expired. Nothing was inserted.".into();
+        }
         match request {
             Request::Enable { value } => {
                 self.enabled = value;
@@ -100,15 +125,38 @@ impl Probe {
                 self.armed = true;
                 self.message = "Waiting for an eligible external field. Click its cursor or selection yourself, then return here. Capture stops after one field.".into();
             }
-            Request::Capture if self.enabled && self.armed => match self.service.capture() {
-                Ok(()) if self.service.destination().is_some() => {
-                    self.ready = true;
-                    self.armed = false;
-                    self.message = "Target captured and frozen. Check the destination below. Click one insertion method once.".into();
+            Request::Cancel => {
+                self.reset();
+                self.message = "Insertion cancelled. Nothing was inserted.".into();
+            }
+            Request::ArmClick { text, clipboard } if self.enabled && cfg!(target_os = "macos") => {
+                self.reset();
+                if text.trim().is_empty() {
+                    self.message = "The draft is empty. Nothing was armed.".into();
+                } else {
+                    self.pending_click = Some(PendingClick {
+                        text,
+                        clipboard,
+                        deadline: Instant::now() + Duration::from_secs(30),
+                    });
+                    self.message = if self.manual_codex {
+                        "Click the Codex draft field within 30 seconds. One insertion attempt will follow that click; there is no need to return here."
+                    } else {
+                        "Click a disposable TextEdit or Chrome field within 30 seconds. One insertion attempt will follow that click."
+                    }.into();
                 }
-                Ok(()) => {}
-                Err(error) => self.message = error,
-            },
+            }
+            Request::Capture if self.enabled && self.armed && self.pending_click.is_none() => {
+                match self.service.capture() {
+                    Ok(()) if self.service.destination().is_some() => {
+                        self.ready = true;
+                        self.armed = false;
+                        self.message = "Target captured and frozen. Check the destination below. Click one insertion method once.".into();
+                    }
+                    Ok(()) => {}
+                    Err(error) => self.message = error,
+                }
+            }
             Request::Native { text, token } => self.insert(&text, token, false),
             Request::Paste { text, token } => self.insert(&text, token, true),
             _ => {}
@@ -117,6 +165,8 @@ impl Probe {
             available: true,
             enabled: self.enabled,
             armed: self.armed,
+            click_armed: self.pending_click.is_some(),
+            click_available: cfg!(target_os = "macos"),
             manual_codex: self.manual_codex,
             manual_codex_available: cfg!(target_os = "macos"),
             token: self.token,
@@ -127,6 +177,32 @@ impl Probe {
             },
             message: self.message.clone(),
         }
+    }
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn clicked(&mut self, token: u64, x: f64, y: f64, current_draft: &str) {
+        if token != self.token || !self.enabled {
+            return;
+        }
+        let Some(pending) = self.pending_click.take() else {
+            return;
+        };
+        self.armed = false;
+        self.ready = false;
+        self.token += 1;
+        if Instant::now() >= pending.deadline || pending.text != current_draft {
+            self.message =
+                "Click insertion cancelled: the draft changed or the request expired.".into();
+            return;
+        }
+        // This is a single attempt. Any capture/validation error consumes it too.
+        self.message = match self.service.capture_clicked(x, y) {
+            Ok(()) if self.service.destination().is_some() => self
+                .service
+                .insert(&pending.text, pending.clipboard)
+                .unwrap_or_else(|e| e),
+            Ok(()) => "The click did not identify an eligible field. Nothing was inserted.".into(),
+            Err(e) => e,
+        };
     }
     fn insert(&mut self, text: &str, token: u64, clipboard: bool) {
         if !self.enabled || !self.ready || token != self.token {
@@ -146,8 +222,62 @@ impl Probe {
 }
 thread_local! {static PROBE:RefCell<Probe> = RefCell::new(Probe::default());}
 /// Always executed on the Tauri main thread, including COM/UIA access.
-pub fn execute(request: Request) -> Status {
-    PROBE.with(|state| state.borrow_mut().apply(request))
+pub fn execute(request: Request, app: tauri::AppHandle) -> Status {
+    let start_click = matches!(request, Request::ArmClick { .. });
+    let status = PROBE.with(|state| state.borrow_mut().apply(request));
+    #[cfg(target_os = "macos")]
+    {
+        if !status.click_armed {
+            macos::stop_click_monitor();
+        }
+        if start_click && status.click_armed {
+            if let Err(error) = macos::start_click_monitor(app, status.token) {
+                return PROBE.with(|state| {
+                    let mut state = state.borrow_mut();
+                    state.reset();
+                    state.message = error;
+                    state.apply(Request::Status)
+                });
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, start_click);
+    status
+}
+#[cfg(target_os = "macos")]
+fn clicked(app: &tauri::AppHandle, token: u64, x: f64, y: f64) {
+    use tauri::Manager;
+    let draft = app
+        .state::<crate::runtime::Service>()
+        .view
+        .lock()
+        .ok()
+        .map(|v| v.draft.text.clone());
+    PROBE.with(|state| {
+        let mut state = state.borrow_mut();
+        if token != state.token {
+            return;
+        }
+        macos::stop_click_monitor();
+        if let Some(draft) = draft {
+            state.clicked(token, x, y, &draft);
+        } else {
+            state.reset();
+            state.message = "Draft unavailable; no insertion attempted.".into();
+        }
+    });
+}
+#[cfg(target_os = "macos")]
+fn expire_click(token: u64) {
+    PROBE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.token == token && state.pending_click.is_some() {
+            state.reset();
+            state.message = "Click insertion expired. Nothing was inserted.".into();
+            macos::stop_click_monitor();
+        }
+    });
 }
 
 #[cfg(test)]
@@ -159,6 +289,9 @@ mod tests {
     }
     impl TextInsertionService for Fake {
         fn capture(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+        fn capture_clicked(&mut self, _: f64, _: f64) -> Result<(), String> {
             Ok(())
         }
         fn destination(&self) -> Option<String> {
@@ -225,5 +358,73 @@ mod tests {
         assert!(!probe.ready && !probe.armed);
         probe.apply(Request::Enable { value: false });
         assert!(!probe.enabled && !probe.ready);
+    }
+    fn click_probe(calls: Rc<Cell<usize>>) -> Probe {
+        Probe {
+            enabled: true,
+            pending_click: Some(PendingClick {
+                text: "TEST ".into(),
+                clipboard: false,
+                deadline: Instant::now() + Duration::from_secs(30),
+            }),
+            service: Box::new(Fake { calls }),
+            ..Probe::default()
+        }
+    }
+    #[test]
+    fn click_inserts_once_without_another_request() {
+        let calls = Rc::new(Cell::new(0));
+        let mut probe = click_probe(calls.clone());
+        probe.clicked(0, 10., 20., "TEST ");
+        probe.clicked(0, 10., 20., "TEST ");
+        assert_eq!(calls.get(), 1);
+        assert!(probe.pending_click.is_none());
+        assert!(probe.message.contains("Uncertain"));
+    }
+    #[test]
+    fn changed_draft_cancel_and_expiry_prevent_click_insertion() {
+        let calls = Rc::new(Cell::new(0));
+        let mut probe = click_probe(calls.clone());
+        probe.clicked(0, 10., 20., "changed");
+        let mut probe = click_probe(calls.clone());
+        probe.apply(Request::Cancel);
+        probe.clicked(0, 10., 20., "TEST ");
+        let mut probe = click_probe(calls.clone());
+        probe.pending_click.as_mut().unwrap().deadline = Instant::now() - Duration::from_secs(1);
+        probe.clicked(0, 10., 20., "TEST ");
+        assert_eq!(calls.get(), 0);
+    }
+    #[test]
+    fn background_capture_cannot_trigger_click_insertion() {
+        let calls = Rc::new(Cell::new(0));
+        let mut probe = click_probe(calls.clone());
+        probe.apply(Request::Capture);
+        probe.apply(Request::Status);
+        assert_eq!(calls.get(), 0);
+        assert!(probe.pending_click.is_some());
+        assert!(!probe.ready);
+    }
+    #[test]
+    fn rejected_clicked_control_consumes_attempt_without_writing() {
+        struct Reject(Fake);
+        impl TextInsertionService for Reject {
+            fn capture(&mut self) -> Result<(), String> {
+                Ok(())
+            }
+            fn destination(&self) -> Option<String> {
+                self.0.destination()
+            }
+            fn insert(&mut self, text: &str, clipboard: bool) -> Result<String, String> {
+                self.0.insert(text, clipboard)
+            }
+        }
+        let calls = Rc::new(Cell::new(0));
+        let mut probe = click_probe(calls.clone());
+        probe.service = Box::new(Reject(Fake {
+            calls: calls.clone(),
+        }));
+        probe.clicked(0, 10., 20., "TEST ");
+        assert_eq!(calls.get(), 0);
+        assert!(probe.pending_click.is_none());
     }
 }

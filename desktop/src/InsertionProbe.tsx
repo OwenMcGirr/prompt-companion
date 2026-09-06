@@ -4,13 +4,21 @@ export type ProbeStatus = {
   available: boolean;
   enabled: boolean;
   armed: boolean;
+  click_armed: boolean;
+  click_available: boolean;
   manual_codex: boolean;
   manual_codex_available: boolean;
   token: number;
   destination: string | null;
   message: string;
 };
-type Request = { kind: string; value?: boolean; text?: string; token?: number };
+type Request = {
+  kind: string;
+  value?: boolean;
+  text?: string;
+  token?: number;
+  clipboard?: boolean;
+};
 const nativeCall = (request: Request) =>
   invoke<ProbeStatus>("insertion_probe", { request });
 export default function InsertionProbe({
@@ -37,6 +45,7 @@ export default function InsertionProbe({
           ? {
               ...s,
               armed: false,
+              click_armed: false,
               destination: null,
               message: `Outcome unavailable: ${String(e)}. Inspect the destination before capturing again. No retry was made.`,
             }
@@ -51,14 +60,14 @@ export default function InsertionProbe({
     void request({ kind: "status" });
   }, []);
   useEffect(() => {
-    if (!status?.enabled || !status.armed) return;
+    if (!status?.enabled || (!status.armed && !status.click_armed)) return;
     const timer = setInterval(() => {
       // Native capture ignores our own process. Web-view focus can remain true
       // after the OS activates another app, so it must not gate native capture.
-      void request({ kind: "capture" });
+      void request({ kind: status.click_armed ? "status" : "capture" });
     }, 200);
     return () => clearInterval(timer);
-  }, [status?.enabled, status?.armed]);
+  }, [status?.enabled, status?.armed, status?.click_armed]);
   if (!status?.available) return null;
   return (
     <section className="prototype">
@@ -105,20 +114,59 @@ export default function InsertionProbe({
           RIGHT” and place the cursor just before RIGHT.
         </li>
         <li>
-          Write “TEST ” in this draft. Click Capture next field, then click the
-          destination’s cursor position yourself.
+          Use “TEST ” in this draft. Make the destination field visible first,
+          then click Insert on next field click.
         </li>
         <li>
-          Return here after capture. Confirm the application below, then click
-          Insert natively once.
+          Click directly before RIGHT in the destination. It will capture and
+          insert once after that click, without returning here. Other clicks
+          cancel the attempt. The request expires after 30 seconds.
         </li>
         <li>
           Inspect the destination without sending. Expect “LEFT TEST RIGHT”.
           Check its Undo using the destination’s Edit menu.
         </li>
       </ol>
+      {status.click_available && (
+        <>
+          <div className="actions">
+            <button
+              disabled={
+                busy || !status.enabled || !text.trim() || status.click_armed
+              }
+              onClick={() =>
+                request({ kind: "armClick", text, clipboard: false })
+              }
+            >
+              Insert on next field click
+            </button>
+            <button
+              disabled={
+                busy || !status.enabled || !text.trim() || status.click_armed
+              }
+              onClick={() =>
+                request({ kind: "armClick", text, clipboard: true })
+              }
+            >
+              Paste on next field click
+            </button>
+          </div>
+          <p>
+            {status.manual_codex
+              ? "Next-click insertion is restricted to Codex for this trial."
+              : "Next-click insertion accepts disposable TextEdit or Chrome fields."}{" "}
+            The draft stays here. No Enter or automatic retry.
+          </p>
+        </>
+      )}
+      {(status.click_armed || status.armed) && (
+        <button disabled={busy} onClick={() => request({ kind: "cancel" })}>
+          Cancel waiting insertion
+        </button>
+      )}
+      <p>Optional: capture first and review before inserting</p>
       <button
-        disabled={busy || !status.enabled || status.armed}
+        disabled={busy || !status.enabled || status.armed || status.click_armed}
         onClick={() => request({ kind: "arm" })}
       >
         {status.armed ? "Waiting for your field…" : "Capture next field"}
@@ -137,7 +185,11 @@ export default function InsertionProbe({
           <button
             key={kind}
             disabled={
-              busy || !text.trim() || !status.destination || !status.enabled
+              busy ||
+              status.click_armed ||
+              !text.trim() ||
+              !status.destination ||
+              !status.enabled
             }
             onClick={() => request({ kind, text, token: status.token })}
           >
