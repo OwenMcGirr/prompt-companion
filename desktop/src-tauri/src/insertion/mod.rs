@@ -46,11 +46,35 @@ fn platform() -> Box<dyn TextInsertionService> {
 thread_local! {static PROBE:RefCell<(bool,Box<dyn TextInsertionService>,String)>=RefCell::new((false,platform(),"Development experiment. No destination is validated for release.".into()));}
 /// Always executed on the Tauri main thread, including COM/UIA access.
 pub fn execute(request: Request) -> Status {
-    PROBE.with(|state|{let mut state=state.borrow_mut();match request{
-    Request::Enable{value}=>{state.0=value;state.1=platform();state.2="Focus a field in TextEdit/Notepad or Chrome, then return here. Accessibility permission is required on macOS.".into();},
-    Request::Capture if state.0=>{if let Err(e)=state.1.capture(){state.2=e;}},
-    Request::Native{text}|Request::Paste{text} if !state.0=>{let _=text;state.2="Enable the development experiment first.".into();},
-    Request::Native{text}=>state.2=state.1.insert(&text,false).unwrap_or_else(|e|e),
-    Request::Paste{text}=>state.2=state.1.insert(&text,true).unwrap_or_else(|e|e),_=>{}
-}Status{available:true,enabled:state.0,destination:state.1.destination(),message:state.2.clone()}})
+    PROBE.with(|state| {
+        let mut state = state.borrow_mut();
+        match request {
+            Request::Enable { value } => {
+                state.0 = value;
+                state.1 = platform();
+                state.2 = "Focus a field in TextEdit/Notepad or Chrome, then return here. Accessibility permission is required on macOS.".into();
+            }
+            Request::Capture if state.0 => {
+                if let Err(error) = state.1.capture() {
+                    state.2 = error;
+                }
+            }
+            Request::Native { .. } | Request::Paste { .. } if !state.0 => {
+                state.2 = "Enable the development experiment first.".into();
+            }
+            Request::Native { text } => {
+                state.2 = state.1.insert(&text, false).unwrap_or_else(|error| error);
+            }
+            Request::Paste { text } => {
+                state.2 = state.1.insert(&text, true).unwrap_or_else(|error| error);
+            }
+            _ => {}
+        }
+        Status {
+            available: true,
+            enabled: state.0,
+            destination: state.1.destination(),
+            message: state.2.clone(),
+        }
+    })
 }

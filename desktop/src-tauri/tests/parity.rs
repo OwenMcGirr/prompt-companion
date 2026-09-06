@@ -585,3 +585,29 @@ fn storage_permissions() {
         0o600
     );
 }
+
+#[test]
+fn edits_during_startup_stay_with_the_saved_task() {
+    let mut saved = Saved {
+        selected_task_id: Some("A".into()),
+        ..Saved::default()
+    };
+    saved.drafts.insert("A".into(), Draft::at_end("old words"));
+    let mut m = Model::new(saved, None);
+    m.edit(Draft::at_end("new words before connecting"));
+    assert_eq!(m.saved.drafts["A"].text, "new words before connecting");
+    m.select(task("A"));
+    assert_eq!(m.view.draft.text, "new words before connecting");
+    assert!(!m.saved.drafts.contains_key("__unassigned__"));
+}
+#[test]
+fn successful_context_refresh_clears_transient_failure() {
+    let mut m = model();
+    let context = m.context.clone().unwrap();
+    m.context_failed("Temporary read failure".into());
+    assert!(m.view.problem.is_some());
+    m.update_context(context);
+    assert!(m.view.problem.is_none());
+    m.edit(Draft::at_end("explain this"));
+    assert!(m.view.can_expand);
+}

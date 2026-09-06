@@ -228,6 +228,9 @@ pub fn start(app: AppHandle, dir: PathBuf, legacy: Option<PathBuf>) -> Service {
                         }
                         Action::Reconnect => {
                             epoch += 1;
+                            list_revision += 1;
+                            cursor = None;
+                            model.view.loading_tasks = false;
                             abort(&mut connection);
                             abort(&mut context_job);
                             abort(&mut listing);

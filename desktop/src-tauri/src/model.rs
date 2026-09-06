@@ -104,7 +104,10 @@ impl Model {
         let view = View {
             draft,
             settings: saved.settings.clone(),
-            selected: None,
+            selected: saved.selected_task_id.as_ref().map(|id| TaskInfo {
+                id: id.clone(),
+                title: "Saved Codex task".into(),
+            }),
             tasks: Vec::new(),
             more: false,
             loading_tasks: false,
@@ -260,6 +263,7 @@ impl Model {
         self.sync();
     }
     pub fn update_context(&mut self, context: Context) -> bool {
+        self.view.problem = None;
         self.view.context_status = if context.active {
             "Task active — generation paused"
         } else if context.partial {
