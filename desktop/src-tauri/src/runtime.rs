@@ -11,7 +11,14 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{sync::mpsc, task::JoinHandle};
+pub struct CompletedPaste {
+    pub text: String,
+    pub revision: u64,
+    pub task: Option<String>,
+}
 pub struct Service {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub paste_completed: mpsc::UnboundedSender<CompletedPaste>,
     pub shutdown: mpsc::UnboundedSender<()>,
     pub exiting: Arc<std::sync::atomic::AtomicBool>,
     pub tx: mpsc::UnboundedSender<Request>,
@@ -90,6 +97,7 @@ pub fn start(app: AppHandle, dir: PathBuf, legacy: Option<PathBuf>) -> Service {
     let exiting = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let finished = exiting.clone();
     let (tx, mut rx) = mpsc::unbounded_channel::<Request>();
+    let (paste_completed, mut pastes) = mpsc::unbounded_channel::<CompletedPaste>();
     tauri::async_runtime::spawn(async move {
         let (events, mut results) = mpsc::unbounded_channel();
         let mut epoch = 0;
@@ -107,6 +115,7 @@ pub fn start(app: AppHandle, dir: PathBuf, legacy: Option<PathBuf>) -> Service {
         let mut clock = tokio::time::interval(Duration::from_millis(100));
         loop {
             tokio::select! {
+                biased;
                 _ = stop.recv() => break,
                 request=rx.recv()=>{
                     let Some(request) = request else { break };
@@ -264,6 +273,15 @@ pub fn start(app: AppHandle, dir: PathBuf, legacy: Option<PathBuf>) -> Service {
                     }
                     publish(&app, &shared, &mut model);
                 },
+                Some(paste) = pastes.recv() => {
+                    if model.paste_completed(&paste.text, paste.revision, paste.task.as_deref()) {
+                        abort(&mut generation);
+                        due = None;
+                        save(&store, &mut model);
+                        schedule(&model, &mut due);
+                        publish(&app, &shared, &mut model);
+                    }
+                }
                 event=results.recv()=>{
                     let Some(event) = event else { break };
                     match event {
@@ -451,6 +469,7 @@ pub fn start(app: AppHandle, dir: PathBuf, legacy: Option<PathBuf>) -> Service {
         app.exit(0);
     });
     Service {
+        paste_completed,
         tx,
         view,
         shutdown,

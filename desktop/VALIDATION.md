@@ -54,3 +54,9 @@ The reported successful trial does not establish repeated reliability, destinati
 The running app still displayed an uncertain verification result after the user-reported successful clipboard paste. Therefore automatic post-paste verification has not been established for Codex; the app preserves the draft and reports uncertainty rather than claiming success.
 
 Local verification for this change: 52 Rust tests passed (two opt-in live-generation tests skipped), 18 frontend tests passed, TypeScript/Vite build passed, and feature-enabled Clippy passed with warnings denied. The normal macOS app bundle built and was opened. CUA verified the main paste button, disabled-empty state, readable dark appearance, and left-click access to the secondary Copy control. The rebuilt bundle was re-added to Accessibility and its toggle verified on. No agent-operated Codex insertion was performed. Windows CI and additional user-operated Codex trials remain separate evidence.
+
+## Clear after confirmed paste — 2026-09-06
+
+Confirmed native-adapter completion now sends an internal Rust completion event. The composer clears only when the original draft text, revision, and selected task still match. The clear is saved, Undo restores the draft/selection, and destination focus is retained. Failed, rejected, and uncertain attempts send no completion event and keep the draft. Existing Codex verification uncertainty remains a limitation: a visually successful but unverified paste does not clear automatically.
+
+Local checks: 54 Rust tests and 23 frontend tests passed; Clippy passed with warnings denied. Added coverage for completion clearing, Undo, retained focus, duplicate completion, newer edits, and another task. Live Codex verification remains user-operated.

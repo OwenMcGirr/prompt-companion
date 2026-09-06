@@ -77,7 +77,7 @@ export default function PasteAction({
       </button>
       <p>
         Click here, then click the Codex draft within 30 seconds. Uses the
-        clipboard. Keeps your draft and never sends.
+        clipboard. Clears the draft after confirmed paste. Never sends.
       </p>
       <p role="status">
         {error ||

@@ -342,6 +342,21 @@ impl Model {
             self.sync();
         }
     }
+    pub fn paste_completed(&mut self, text: &str, revision: u64, task: Option<&str>) -> bool {
+        if self.view.revision != revision
+            || self.view.draft.text != text
+            || self.view.selected.as_ref().map(|t| t.id.as_str()) != task
+        {
+            return false;
+        }
+        let focus = self.view.focus;
+        self.clear();
+        // Keep the destination active after paste; Undo remains available here.
+        self.view.focus = focus;
+        self.view.status = "Pasted — draft cleared. Undo restores it.".into();
+        self.view.problem = None;
+        true
+    }
     pub fn copy_result(&mut self, ok: bool) {
         if self.view.draft.text.trim().is_empty() {
             return;

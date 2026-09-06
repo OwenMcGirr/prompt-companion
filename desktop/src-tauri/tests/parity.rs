@@ -611,3 +611,40 @@ fn successful_context_refresh_clears_transient_failure() {
     m.edit(Draft::at_end("explain this"));
     assert!(m.view.can_expand);
 }
+
+#[test]
+fn confirmed_paste_clears_once_and_undo_restores_selection_without_focus_change() {
+    let mut m = model();
+    m.edit(Draft {
+        text: "hello 😀".into(),
+        cursor: 2,
+        selection_length: 3,
+    });
+    let before = m.view.draft.clone();
+    let revision = m.view.revision;
+    let focus = m.view.focus;
+    assert!(m.paste_completed(&before.text, revision, Some("A")));
+    assert!(m.view.draft.text.is_empty());
+    assert_eq!(m.view.focus, focus);
+    assert!(!m.paste_completed(&before.text, revision, Some("A")));
+    m.undo();
+    assert_eq!(m.view.draft, before);
+}
+#[test]
+fn stale_paste_completion_cannot_clear_newer_draft_or_another_task() {
+    let mut m = model();
+    m.edit(Draft {
+        text: "original".into(),
+        cursor: 8,
+        selection_length: 0,
+    });
+    let revision = m.view.revision;
+    assert!(!m.paste_completed("original", revision, Some("B")));
+    m.edit(Draft {
+        text: "new words".into(),
+        cursor: 9,
+        selection_length: 0,
+    });
+    assert!(!m.paste_completed("original", revision, Some("A")));
+    assert_eq!(m.view.draft.text, "new words");
+}

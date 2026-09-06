@@ -207,12 +207,12 @@ impl Probe {
         }
     }
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    fn clicked(&mut self, token: u64, x: f64, y: f64, current_draft: &str) {
+    fn clicked(&mut self, token: u64, x: f64, y: f64, current_draft: &str) -> bool {
         if token != self.token || !self.enabled {
-            return;
+            return false;
         }
         let Some(pending) = self.pending_click.take() else {
-            return;
+            return false;
         };
         self.armed = false;
         self.ready = false;
@@ -220,17 +220,21 @@ impl Probe {
         if Instant::now() >= pending.deadline || pending.text != current_draft {
             self.message =
                 "Click insertion cancelled: the draft changed or the request expired.".into();
-            return;
+            return false;
         }
         // This is a single attempt. Any capture/validation error consumes it too.
-        self.message = match self.service.capture_clicked(x, y) {
-            Ok(()) if self.service.destination().is_some() => self
-                .service
-                .insert(&pending.text, pending.clipboard)
-                .unwrap_or_else(|e| e),
-            Ok(()) => "The click did not identify an eligible field. Nothing was inserted.".into(),
-            Err(e) => e,
+        let result = match self.service.capture_clicked(x, y) {
+            Ok(()) if self.service.destination().is_some() => {
+                self.service.insert(&pending.text, pending.clipboard)
+            }
+            Ok(()) => {
+                Err("The click did not identify an eligible field. Nothing was inserted.".into())
+            }
+            Err(e) => Err(e),
         };
+        let confirmed = result.is_ok();
+        self.message = result.unwrap_or_else(|e| e);
+        confirmed
     }
     fn insert(&mut self, text: &str, token: u64, clipboard: bool) {
         if !self.enabled || !self.ready || token != self.token {
@@ -359,12 +363,18 @@ fn clicked(app: &tauri::AppHandle, token: u64, x: f64, y: f64) {
             if state
                 .pending_click
                 .as_ref()
-                .is_some_and(|p| !p.matches_identity(revision, task))
+                .is_some_and(|p| !p.matches_identity(revision, task.clone()))
             {
                 state.apply(Request::Cancel);
                 return;
             }
-            state.clicked(token, x, y, &draft);
+            if state.clicked(token, x, y, &draft) {
+                if app.state::<crate::runtime::Service>().paste_completed.send(crate::runtime::CompletedPaste { text: draft, revision, task }).is_ok() {
+                    state.message = "Paste confirmed. Clearing the draft if it is unchanged. Undo can restore it.".into();
+                } else {
+                    state.message = "Paste confirmed, but the composer stopped. Draft kept.".into();
+                }
+            }
         } else {
             state.reset();
             state.message = "Draft unavailable; no insertion attempted.".into();
@@ -479,8 +489,8 @@ mod tests {
     fn click_inserts_once_without_another_request() {
         let calls = Rc::new(Cell::new(0));
         let mut probe = click_probe(calls.clone());
-        probe.clicked(0, 10., 20., "TEST ");
-        probe.clicked(0, 10., 20., "TEST ");
+        assert!(!probe.clicked(0, 10., 20., "TEST "));
+        assert!(!probe.clicked(0, 10., 20., "TEST "));
         assert_eq!(calls.get(), 1);
         assert!(probe.pending_click.is_none());
         assert!(probe.message.contains("Uncertain"));
