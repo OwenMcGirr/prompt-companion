@@ -90,7 +90,7 @@ The selected conversation excerpts and draft go to OpenAI through the existing C
 
 ## Keyboard navigation
 
-Press Down at the end of the draft (or Up at its start) to focus a suggestion. Use any arrow key to move between enabled suggestions, wrapping at either end. Enter accepts the highlighted phrase or clarification choice and returns focus to the draft. Escape returns without accepting. Suggestions stay stable while keyboard-focused, just as they do while hovered. Modified arrows, IME composition, and vertical movement within multiline draft text retain normal editing behavior. Left-click selection remains available.
+Press Down at the end of the draft (or Up at its start) to focus a suggestion. Use any arrow key to move between enabled suggestions, wrapping at either end. Enter accepts the highlighted phrase or clarification choice and returns focus to the draft. Escape returns without accepting. Suggestions stay stable while keyboard-focused. Mouse hovering and movement do not pause refreshing. Modified arrows, IME composition, and vertical movement within multiline draft text retain normal editing behavior. Left-click selection remains available.
 
 ## Paste into Codex on macOS
 

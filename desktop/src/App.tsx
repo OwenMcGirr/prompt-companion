@@ -16,7 +16,6 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
     [search, setSearch] = useState(""),
     [failure, setFailure] = useState("");
   const phrases = useRef<HTMLDivElement>(null);
-  const pointerOnPhrases = useRef(false);
   const editor = useRef<HTMLTextAreaElement>(null),
     modal = useRef<HTMLDialogElement>(null),
     sequence = useRef(0),
@@ -302,21 +301,9 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
         role="group"
         aria-label="Suggestions"
         aria-describedby="suggestion-keys"
-        onPointerEnter={() => {
-          pointerOnPhrases.current = true;
-          send({ type: "hover", value: true });
-        }}
-        onPointerLeave={() => {
-          pointerOnPhrases.current = false;
-          if (!phrases.current?.contains(document.activeElement))
-            send({ type: "hover", value: false });
-        }}
         onFocus={() => send({ type: "hover", value: true })}
         onBlur={(e) => {
-          if (
-            !e.currentTarget.contains(e.relatedTarget as Node | null) &&
-            !pointerOnPhrases.current
-          )
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
             send({ type: "hover", value: false });
         }}
         onKeyDown={(e) => {

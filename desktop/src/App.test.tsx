@@ -329,3 +329,32 @@ it("navigates clarification choices and skips the disabled third row", async () 
   );
   expect(document.activeElement).toBe(draft);
 });
+
+it("mouse hover does not freeze refreshing or retain a keyboard freeze", async () => {
+  const f = fixture();
+  render(<App bridge={f.bridge} />);
+  const first = await screen.findByRole("button", {
+    name: "Insert: Fix login",
+  });
+  const group = screen.getByRole("group", { name: "Suggestions" });
+  fireEvent.pointerEnter(group);
+  fireEvent.pointerMove(first);
+  await act(async () => {});
+  expect(f.calls.some((c) => c.action.type === "hover")).toBe(false);
+  f.update({ phrases: ["Updated phrase", "Add tests", "Explain error"] });
+  expect(
+    screen.getByRole("button", { name: "Insert: Updated phrase" }),
+  ).toBeTruthy();
+  act(() => first.focus());
+  await waitFor(() =>
+    expect(
+      f.calls.some((c) => c.action.type === "hover" && c.action.value),
+    ).toBe(true),
+  );
+  act(() => screen.getByRole("textbox").focus());
+  await waitFor(() =>
+    expect(
+      f.calls.filter((c) => c.action.type === "hover").at(-1)?.action,
+    ).toEqual({ type: "hover", value: false }),
+  );
+});
