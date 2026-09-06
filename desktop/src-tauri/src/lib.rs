@@ -83,12 +83,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![action, snapshot, insertion_probe])
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
-            #[cfg(target_os = "macos")]
-            let legacy = dirs::home_dir()
-                .map(|p| p.join("Library/Application Support/PromptCompanion/drafts.json"));
-            #[cfg(not(target_os = "macos"))]
-            let legacy = None;
-            let service = runtime::start(app.handle().clone(), dir, legacy);
+            let service = runtime::start(app.handle().clone(), dir);
             app.manage(service);
             Ok(())
         })

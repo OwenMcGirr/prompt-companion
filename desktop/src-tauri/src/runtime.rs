@@ -88,8 +88,8 @@ fn connect(dir: PathBuf, epoch: u64, tx: mpsc::UnboundedSender<Event>) -> JoinHa
         let _ = tx.send(Event::Ready(epoch, Engine::connect(&dir).await));
     })
 }
-pub fn start(app: AppHandle, dir: PathBuf, legacy: Option<PathBuf>) -> Service {
-    let (store, saved, error) = Store::load(dir.clone(), legacy.as_deref());
+pub fn start(app: AppHandle, dir: PathBuf) -> Service {
+    let (store, saved, error) = Store::load(dir.clone());
     let mut model = Model::new(saved, error);
     let shared = Arc::new(Mutex::new(model.view.clone()));
     let view = shared.clone();

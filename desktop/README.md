@@ -1,6 +1,6 @@
-# Prompt Companion — Rust/Tauri preview
+# Prompt Companion — Rust/Tauri application
 
-This preview rebuilds the composer in **Tauri 2, Rust, React and TypeScript**. The Swift application and its build remain available in the repository root while platform acceptance is completed. The preview uses a separate identity and does not replace the Swift installation.
+Prompt Companion is built with **Tauri 2, Rust, React and TypeScript**. This directory contains the complete application implementation.
 
 ## Platforms and prerequisites
 
@@ -69,7 +69,7 @@ Optionally set `PROMPT_COMPANION_TEST_TASK` to an existing task ID for a read-on
 ## Use the composer
 
 1. Choose a local Codex task using the context button. Search and Load more are available.
-2. Type in the draft or left-click a suggested phrase. Text is inserted at the cursor or replaces the selection; focus returns to the draft. Hovering over the phrase area keeps waiting results from appearing beneath your pointer.
+2. Type in the draft or left-click a suggested phrase. Text is inserted at the cursor or replaces the selection; focus returns to the draft. Mouse movement and hovering do not pause suggestion refreshing.
 3. Click **Expand** for a fuller prompt based on the selected conversation. Resolve one clarification if offered, or click **Keep original**. Read the result before using it.
 4. On macOS, click **Paste on next field click**, then click the Codex draft within 30 seconds. Your companion draft clears only after the destination text is verified. Failed or uncertain pastes keep it. Undo restores a cleared draft. **Cancel waiting paste** cancels it. On Windows, use **Copy Prompt**, then paste yourself. On macOS, **Copy instead** provides the same fallback; successful copying clears the draft and Undo restores it. Nothing is submitted automatically.
 5. Use **Undo** to restore a phrase edit, expansion, Clear, or the clearing after copying. Settings adjusts text size, phrase-button height, automatic suggestions, and always-on-top behavior. Both Settings and the composer follow system appearance.
@@ -82,7 +82,7 @@ The UI can wrap long phrases to additional lines rather than hiding text behind 
 
 The preview identifier is `com.owenmcgirr.prompt-companion.preview`. Its `state.json` and private model-catalog copy are stored in the OS application-data directory for that identifier (on macOS, `~/Library/Application Support/com.owenmcgirr.prompt-companion.preview`; on Windows, the corresponding AppData/Roaming directory).
 
-On the first Mac launch only, existing Swift drafts/preferences are imported from `~/Library/Application Support/PromptCompanion/drafts.json`. A `swift-drafts-backup.json` copy is retained in the preview directory. The original file is never overwritten. Cursor offsets are validated during import. Later preview launches use only preview state. Unreadable/future-version preview storage is left untouched and an error is displayed; editing/copying remain available, but saving stays disabled to avoid destroying that file.
+If `state.json` is unreadable or uses an unsupported future version, it is left untouched and the app displays an error. Editing and copying remain available in memory, while saving stays disabled to avoid destroying the file.
 
 Writes use temporary files and atomic replacement. Mac directories/files are restricted to the owner; Windows files inherit the user-profile directory's ACL. Only one preview instance runs per user. On exit, the backend saves state and stops its Codex processes. Drafts are local, not encrypted by this application. Prompt text is not logged by the app; Codex's own retention behavior still applies.
 

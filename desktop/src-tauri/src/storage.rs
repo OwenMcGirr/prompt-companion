@@ -83,12 +83,12 @@ pub struct Store {
     pub writable: bool,
 }
 impl Store {
-    pub fn load(dir: PathBuf, legacy: Option<&Path>) -> (Self, Saved, Option<String>) {
+    pub fn load(dir: PathBuf) -> (Self, Saved, Option<String>) {
         let mut store = Self {
             dir,
             writable: true,
         };
-        match store.read(legacy) {
+        match store.read() {
             Ok(saved) => (store, saved, None),
             Err(e) => {
                 store.writable = false;
@@ -96,37 +96,11 @@ impl Store {
             }
         }
     }
-    fn read(&self, legacy: Option<&Path>) -> Result<Saved, String> {
+    fn read(&self) -> Result<Saved, String> {
         let path = self.dir.join("state.json");
         let mut saved: Saved = if path.exists() {
             serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?
-        } else if let Some(path) = legacy.filter(|p| p.exists()) {
-            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Legacy {
-                #[serde(rename = "selectedTaskID")]
-                selected_task_id: Option<String>,
-                drafts: HashMap<String, Draft>,
-                font_size: f64,
-                button_height: f64,
-                automatic: bool,
-                floating: bool,
-            }
-            let v: Legacy = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            write_private(&self.dir.join("swift-drafts-backup.json"), &bytes)?;
-            Saved {
-                version: 1,
-                selected_task_id: v.selected_task_id,
-                drafts: v.drafts,
-                settings: Settings {
-                    font_size: v.font_size,
-                    button_height: v.button_height,
-                    automatic: v.automatic,
-                    floating: v.floating,
-                },
-            }
         } else {
             Saved::default()
         };

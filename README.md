@@ -1,159 +1,135 @@
 # Prompt Companion
 
-**Rust/Tauri preview:** A new macOS-and-Windows composer is available in [`desktop`](desktop/README.md), with React/TypeScript UI, a Rust backend, separate preview storage, and one-time Mac draft import. See its [build instructions](desktop/README.md#build-run-and-test) and [validation status](desktop/VALIDATION.md). The macOS composer now offers **Paste on next field click** for Codex, with Copy as a fallback; Windows retains Copy Prompt. See the desktop guide for Accessibility setup and current validation limits. The Swift app documented below remains available during preview acceptance.
+Prompt Companion reduces the amount of typing needed to write useful Codex prompts. Select a Codex task for context, type a few words, then use phrase suggestions or expand the shorthand into an editable prompt.
 
-A native macOS app that helps you write Codex prompts with less typing. Choose a task, type a few words, and click useful phrase suggestions—or expand shorthand into a fuller, editable prompt using that task’s conversation.
+The interface uses large controls and works with ordinary left clicks. It also supports arrow-key suggestion navigation. Speech is not required.
 
-Designed around large buttons and ordinary left clicks, including for people who use head-controlled pointing. Speech is not required.
+Prompt Companion is an independent, early-stage community project built with Tauri 2, Rust, React, and TypeScript. It targets macOS 14+ on Apple Silicon and Intel, plus Windows 11 x64. Linux and Windows ARM are not currently supported.
 
-**Status:** early-stage community project. This is an independent companion app, not an official OpenAI product. It reads selected task context and helps compose text; you review, copy, and paste into Codex yourself. Nothing is sent to a Codex task automatically.
-
-[Setup](#setup) · [Build and run](#build-and-run) · [Usage](#usage) · [Tests](#tests) · [Troubleshooting](#troubleshooting) · [Contributing](CONTRIBUTING.md)
+[Setup](#setup) · [Build and run](#build-and-run) · [Usage](#usage) · [Tests](#tests) · [Privacy](#context-privacy-and-storage) · [Contributing](CONTRIBUTING.md)
 
 ## Requirements
 
-- **macOS 14 or newer.** The interface uses SwiftUI and AppKit; Windows and Linux are not supported.
-- **Swift 6 or newer** and the macOS SDK, provided by a compatible Xcode or Xcode Command Line Tools installation.
-- **Codex installed and signed in with ChatGPT**, with available usage allowance and at least one local task. API-key authentication is not supported by this app.
-- Internet access for phrase generation and expansion. Building and deterministic tests do not need a Codex account.
+- A current stable Rust toolchain.
+- Node.js 24 and npm.
+- The [native Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform. macOS needs Xcode Command Line Tools. Windows needs Microsoft C++ Build Tools with the desktop C++ workload and WebView2.
+- Codex installed and signed in with ChatGPT, with available usage and at least one local task. Prompt Companion does not accept API-key authentication.
+- Internet access for phrase generation and prompt expansion.
 
-Development has been checked on Apple Silicon with Swift 6.3.3 and Codex 0.153.1. Other versions and Intel Macs are not yet verified. The build targets the current Mac’s architecture; it does not produce a universal binary.
+The Mac app searches installed Codex/ChatGPT app bundles and standard CLI paths. Windows searches `PATH` and common native locations for `codex.exe`; it does not execute shell `.cmd` launchers. Open Codex once before connecting so its local model catalog exists.
 
 ## Setup
 
-1. Install Apple’s command-line developer tools if needed:
+```sh
+git clone https://github.com/OwenMcGirr/prompt-companion.git
+cd prompt-companion/desktop
+npm ci
+```
 
-   ```sh
-   xcode-select --install
-   ```
-
-   Complete the installer, then check `swift --version`. If it is older than Swift 6, update your developer tools. If using full Xcode, open it once to complete setup.
-
-2. Install and open Codex, sign in using **ChatGPT**, and create or open a task. CLI users can follow the [official Codex CLI setup instructions](https://learn.chatgpt.com/docs/codex/cli). Open Codex once before starting Prompt Companion so its local model catalog is available.
-
-3. Clone the repository:
-
-   ```sh
-   git clone https://github.com/OwenMcGirr/prompt-companion.git
-   cd prompt-companion
-   ```
-
-No third-party Swift package dependencies or new API keys are required. Prompt Companion uses your existing Codex sign-in; do not copy credentials into this repository.
+Prompt Companion uses the existing Codex ChatGPT session. Do not copy account credentials into this repository.
 
 ## Build and run
 
-Run these commands from the repository root:
+Start a development build from `desktop`:
 
 ```sh
-./build.sh "$PWD/dist"
-open "dist/Prompt Companion.app"
+npm run tauri -- dev
 ```
 
-Alternatively, open `dist` in Finder and double-click **Prompt Companion.app**. You can copy the bundle to your Applications folder. Quit any running copy before rebuilding or replacing it.
-
-The script makes a release build, includes the icon and app metadata, and applies a local ad-hoc signature. It does **not** notarize the app or sign it with a Developer ID for distribution. This repository’s documented installation path is building from source.
-
-Without an output argument, `./build.sh` places the bundle in the repository’s parent directory. Set `PROMPT_COMPANION_BUILD_DIR` to change the Swift build cache location:
+Build a macOS application bundle:
 
 ```sh
-PROMPT_COMPANION_BUILD_DIR="$PWD/.build-release" ./build.sh "$PWD/dist"
+npm run tauri -- build --bundles app
 ```
 
-For a quick development build and run without packaging:
+For a universal Mac bundle:
 
 ```sh
-swift run PromptCompanion
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run tauri -- build --target universal-apple-darwin --bundles app
 ```
 
-Use the packaged app when checking the icon, window behavior, and Finder launch. Open `Package.swift` in Xcode if you prefer an IDE.
+Build a Windows x64 installer from Windows:
+
+```powershell
+npm run tauri -- build --bundles nsis
+```
+
+Bundles are written below `desktop/src-tauri/target/release/bundle`, or the corresponding target directory for universal builds. Current local artifacts are unsigned and are not notarized or Authenticode-signed. CI builds both platforms without publishing a release.
 
 ## Usage
 
-1. **Choose a task.** Click the context button at the top and select the Codex conversation you want to use. The app keeps this selection until you change it; it does not detect the task currently visible in Codex.
-2. **Write your prompt.** Type into the draft, or click one of the three large phrase buttons. A phrase is inserted at the cursor or replaces the selection, and focus returns to the draft so you can keep typing.
-3. **Expand shorthand when helpful.** Click **Expand** to rewrite the entire draft into a fuller prompt using the selected conversation. Review and edit the result.
-4. **Copy and use it.** Click **Copy Prompt**, then paste into Codex with your usual paste method. A successful copy clears the draft and returns focus to it. A failed copy keeps the text. You decide when to submit in Codex.
+1. Select a Codex task with the context button. This is the conversation used to generate relevant wording.
+2. Type in the draft or left-click a suggested phrase. A phrase inserts at the cursor or replaces the selection, then focus returns to the draft.
+3. Click **Expand** to turn shorthand into a fuller prompt. Review the result, resolve one clarification if offered, or use **Keep original**.
+4. On macOS, click **Paste on next field click**, then click the Codex draft within 30 seconds. Prompt Companion never presses Enter or sends the prompt. A confirmed paste clears the unchanged companion draft; Undo restores it. Failed or uncertain pastes keep it.
+5. On Windows, use **Copy Prompt** and paste into Codex yourself. On macOS, the same fallback is under **Copy instead**. Successful copying clears the draft and Undo restores it.
 
-**Undo** reverses the last edit, including a phrase insertion, expansion, Clear, or clearing after Copy Prompt. Undoing a copy restores the draft without changing the clipboard. Drafts are saved separately for each task and restored after reopening the app.
+Drafts are saved separately for each selected task. Settings controls text size, suggestion-button height, automatic suggestions, and whether the window stays above other apps. Both appearances follow the system theme.
 
-**While the selected task is active, suggestions, Refresh phrases, and Expand are paused.** Pending generation is cancelled and late results are discarded. You can still edit, copy, clear, and undo your draft. Suggestions resume when the task becomes inactive if automatic suggestions are enabled; otherwise use Refresh phrases. Activity checks use Codex task/turn status plus start/finish markers from the local history path supplied by Codex, because a separate app-server connection may report a running task as not loaded. A Codex crash without a finish marker can conservatively leave a task paused; completing or stopping a subsequent turn in that task records a new lifecycle state.
+When the selected task is active, phrase generation and expansion pause. The draft remains editable. Pending generation is cancelled, stale results are rejected, and suggestions resume after the task becomes inactive when automatic suggestions are enabled.
 
-Suggestions stay stable while the pointer is over the phrase area. Move the pointer out to reveal waiting suggestions. Results based on an older draft become unclickable immediately. Use **Refresh phrases** to request another set.
+Mouse movement does not pause suggestion refreshing. To use the keyboard, press Down at the end of the draft or Up at its start, then use the arrow keys to move between enabled suggestions. Enter accepts the highlighted phrase or clarification choice; Escape returns to the draft.
 
-### Expand shorthand
+### Paste on next field click
 
-Examples to try in a relevant task:
+The macOS paste action requires Accessibility permission in **System Settings → Privacy & Security → Accessibility**. It listens for one external left click only while armed, verifies that the clicked control is the Codex editable field, and performs one clipboard paste. It expires after 30 seconds and never retries automatically.
 
-| Short draft | Intended behavior |
-| --- | --- |
-| `bigger buttons same layout` | Ask for larger buttons while preserving the established layout. |
-| `why slow` | Ask for an explanation of the relevant delay; keep it a question. |
-| `fix it` | Offer clickable interpretations if the conversation leaves more than one meaningful issue unresolved. |
-| `copy clear but no push` | Preserve the requested copy-and-clear behavior and the instruction not to push. |
+The clipboard must contain only supported plain-text formats; unsupported formats are left unchanged. Prompt Companion checks the field, selection, surrounding text, and focus before pasting. It clears the companion draft only after the resulting destination text is verified and the original draft, revision, and selected task still match. If verification is uncertain, inspect Codex before trying again.
 
-If clarification is needed, choose one of 2–3 interpretations or click **Keep original**. There is at most one clarification round. Expansion pauses phrase predictions. Editing, changing tasks, clearing, copying, or a conversation update cancels it; failures keep the original draft. A successful replacement is one undoable edit.
+Unsigned Mac rebuilds can invalidate Accessibility authorization even if an old Settings toggle remains visible. Re-authorize the exact rebuilt bundle when this happens.
 
-The generation instructions preserve intent, limits, uncertainty, and questions, and use details already established in context. Earlier permission to commit, push, or deploy is not supposed to become permission in a new prompt. **Review generated wording:** these are intended behaviors, not guarantees that a model will always interpret your meaning correctly.
+## Context, privacy, and storage
 
-### Settings
-
-Click the sliders icon to adjust text size, phrase-button height, automatic suggestions, and whether the window stays above other apps. Settings follows macOS light/dark appearance; the main composer currently uses a light palette. Session counters report typing and phrase activity, not a measured amount of effort saved.
-
-## Context, privacy, and account usage
-
-- The selected conversation excerpts and your draft go to OpenAI for generation using your existing Codex ChatGPT sign-in and allowance. This is not an offline text predictor and does not switch to separately billed API access.
-- The app reads local task metadata/history through `codex app-server`, without resuming or writing to the selected task. Context and task activity refresh approximately every two seconds, and activity is checked again before generation.
-- Long conversations use the first three and most recent 24 turns, with partial context indicated in the interface. Only user and assistant text is included; tool output, reasoning, and attachment contents are excluded. Earlier included text may be summarized for prediction.
-- Drafts and preferences are stored in `~/Library/Application Support/PromptCompanion/drafts.json`, with owner-only file permissions. This is local storage, not encryption. To reset saved drafts and preferences, quit the app and move this file to a safe backup location.
-- Prompt Companion does not log prompt text, capture the screen, monitor global keystrokes, or request macOS Accessibility access. Codex’s own account and retention behavior still applies.
-- Each generation uses an isolated ephemeral session. Executable capabilities are disabled, interactive server requests are rejected, and the generation sandbox is read-only. A private model-catalog copy removes file-editing tools without changing your Codex configuration.
-
-Phrase generation prefers `gpt-5.6-luna`; expansion prefers `gpt-5.6-sol`. The installed model list is checked, with a supported fast-model fallback for phrases and the phrase model as the expansion fallback. Settings shows the models actually in use. Codex protocol and catalog changes can break compatibility; unsupported metadata causes an error instead of relaxing tool restrictions.
+- Selected conversation excerpts and the draft go to OpenAI through the existing Codex account for generation.
+- Prompt Companion reads task metadata and history through `codex app-server`; it does not resume or write to the selected task.
+- Only user and assistant text enters generation context. Tool output, hidden reasoning, and attachment contents are excluded.
+- Each generation uses an isolated temporary transport with executable features and MCP servers disabled, a read-only sandbox, and a private tool-restricted model catalog. Original Codex configuration is not edited.
+- Prompt text is not logged. The app does not capture the screen or monitor global keystrokes.
+- Drafts and settings use the platform application-data directory for `com.owenmcgirr.prompt-companion.preview`. Writes are atomic; Mac files are owner-restricted and Windows files inherit the user profile ACL. Data is local but is not encrypted by the application.
 
 ## Tests
 
-Run the deterministic suite from the repository root:
+Run the deterministic checks from `desktop`:
 
 ```sh
-swift test
+npm run build
+npm test
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo test --manifest-path src-tauri/Cargo.toml --locked
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features insertion-prototype --locked -- -D warnings
 ```
 
-The two live tests are skipped by default. Deterministic tests cover text insertion, Unicode and selections, context limits, stale results, pointer freeze, draft persistence, Undo, copy-and-clear, expansion, clarification, cancellation, and failure recovery. GitHub Actions is configured to run these tests and package the app on macOS without account credentials.
-
-To run live integration tests locally **using your Codex usage allowance**:
+The two live tests are ignored by default. They use the installed Codex account and consume allowance:
 
 ```sh
-PROMPT_COMPANION_LIVE_TEST=1 swift test --filter LiveIntegrationTests
+PROMPT_COMPANION_LIVE_TEST=1 cargo test --manifest-path src-tauri/Cargo.toml --test live -- --ignored --nocapture
 ```
 
-Sign in and have at least one local Codex task first. Optionally set `PROMPT_COMPANION_TEST_TASK` to a task ID for a read-only history check. Generated test requests use synthetic context. Inspect the printed expansion examples for meaning; automated assertions cannot fully establish preserved intent.
+On Windows PowerShell, set and later remove `PROMPT_COMPANION_LIVE_TEST` through `$env:`. Optionally set `PROMPT_COMPANION_TEST_TASK` to an existing task ID for a read-only context/activity check. Generation tests use synthetic conversation data; review their wording as well as assertions.
 
-Before proposing a UI change, check actual clicks: phrase insertion and focus, Expand, clarification, Keep original, Undo, Copy Prompt clearing, and Settings appearance. See [VALIDATION.md](VALIDATION.md) for recorded checks and remaining limitations.
+See [desktop/VALIDATION.md](desktop/VALIDATION.md) for measured platform and interaction coverage and [desktop/MANUAL_INSERTION_TESTS.md](desktop/MANUAL_INSERTION_TESTS.md) for the user-operated insertion matrix.
 
 ## Troubleshooting
 
 | Problem | What to try |
 | --- | --- |
-| `swift` is missing or too old | Install/update Xcode or Command Line Tools and check `swift --version`. |
-| Codex cannot be found | Install Codex in `/Applications` or `~/Applications`, or the CLI in `/opt/homebrew/bin`, `/usr/local/bin`, or your launch environment’s `PATH`. Finder launches may not inherit shell PATH customizations. |
-| ChatGPT sign-in is required | Sign into Codex with ChatGPT, then click **Reconnect**. An API-key login is not accepted. |
-| Model catalog unavailable | Open Codex once, then reconnect. Update Codex if its metadata is unsupported. |
-| No task or wrong context | Create/open a local Codex task, refresh the task list, and explicitly select the right task. |
-| Suggestions appear stuck | Move the pointer away from the phrase area. Check automatic suggestions in Settings or click **Refresh phrases**. |
-| Timeout or connection error | Check network connectivity and Codex allowance, then retry or reconnect. Your draft remains available. |
-| An old version opens | Quit all running copies and open the exact bundle you just built. |
+| Codex cannot be found | Install Codex in a standard location or put its native executable on `PATH`, then reopen Prompt Companion. |
+| ChatGPT sign-in is required | Sign in through Codex, then click **Reconnect**. |
+| Model catalog unavailable | Open Codex once, update it if needed, then reconnect. |
+| Wrong context | Open the task picker and explicitly select the intended local task. |
+| Suggestions are paused | Check whether the selected task is active and whether automatic suggestions are enabled. |
+| Paste cannot arm on macOS | Grant Accessibility permission to the exact running application bundle. |
+| Paste outcome is uncertain | Inspect the Codex draft before taking another action; Prompt Companion intentionally does not retry. |
 
-For a reproducible problem, [open an issue](https://github.com/OwenMcGirr/prompt-companion/issues) with macOS, Swift, and Codex versions, steps, expected behavior, and actual behavior. Use synthetic examples and redact private conversation text and account information.
+Report reproducible problems through [GitHub Issues](https://github.com/OwenMcGirr/prompt-companion/issues). Include platform, architecture, Codex version, steps, expected behavior, and actual behavior. Use synthetic examples and remove account details, private task IDs, drafts, and conversation history.
 
-## Project layout and contributions
+## Project layout
 
-- `Sources/CompanionCore`: draft editing, context processing, and expansion response validation.
-- `Sources/PromptCompanion`: SwiftUI/AppKit interface, state and persistence, generation service, and app-server transport.
-- `Tests/CompanionCoreTests`: deterministic tests and opt-in live integration tests.
-- `Resources`: bundle metadata and icon.
-- `build.sh`: release app packaging and local signing.
-
-Accessibility feedback, bug reports, and focused improvements are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes.
+- `desktop/src`: React and TypeScript interface and interaction tests.
+- `desktop/src-tauri/src`: Rust state, persistence, generation, activity detection, and platform integration.
+- `desktop/src-tauri/tests`: deterministic parity and opt-in live tests.
+- `.github/workflows/tauri.yml`: macOS and Windows build, test, lint, and packaging jobs.
 
 ## License
 

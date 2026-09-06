@@ -524,27 +524,6 @@ fn missing_history_is_error() {
     assert!(activity::from_rollout(std::path::Path::new("/no-such-history-file")).is_err());
 }
 #[test]
-fn persistence_and_import_once() {
-    let dir = tempfile::tempdir().unwrap();
-    let legacy = dir.path().join("old.json");
-    let raw=json!({"selectedTaskID":"A","drafts":{"A":{"text":"🙂 draft","cursor":999,"selectionLength":999}},"fontSize":99,"buttonHeight":86,"automatic":false,"floating":true}).to_string();
-    std::fs::write(&legacy, &raw).unwrap();
-    let (store, saved, error) = Store::load(dir.path().join("preview"), Some(&legacy));
-    assert!(error.is_none(), "{error:?}");
-    assert_eq!(saved.selected_task_id.as_deref(), Some("A"));
-    assert_eq!(saved.settings.font_size, 32.);
-    assert_eq!(saved.drafts["A"], Draft::at_end("🙂 draft"));
-    assert_eq!(std::fs::read_to_string(&legacy).unwrap(), raw);
-    assert_eq!(
-        std::fs::read_to_string(store.dir.join("swift-drafts-backup.json")).unwrap(),
-        raw
-    );
-    std::fs::write(&legacy, "broken").unwrap();
-    let (_, restored, error) = Store::load(store.dir.clone(), Some(&legacy));
-    assert!(error.is_none());
-    assert_eq!(restored.drafts, saved.drafts);
-}
-#[test]
 fn corrupt_or_future_storage_is_never_overwritten() {
     for raw in [
         "broken".into(),
@@ -553,7 +532,7 @@ fn corrupt_or_future_storage_is_never_overwritten() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("state.json");
         std::fs::write(&p, &raw).unwrap();
-        let (store, saved, error) = Store::load(dir.path().into(), None);
+        let (store, saved, error) = Store::load(dir.path().into());
         assert!(error.is_some());
         assert!(store.save(&saved).is_err());
         assert_eq!(std::fs::read_to_string(p).unwrap(), raw);
@@ -562,7 +541,7 @@ fn corrupt_or_future_storage_is_never_overwritten() {
 #[test]
 fn store_failure_preserves_memory() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, _, _) = Store::load(dir.path().join("data"), None);
+    let (store, _, _) = Store::load(dir.path().join("data"));
     std::fs::remove_dir_all(&store.dir).unwrap();
     std::fs::write(&store.dir, "not a directory").unwrap();
     let mut m = model();
@@ -575,7 +554,7 @@ fn store_failure_preserves_memory() {
 fn storage_permissions() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
-    let (store, _, _) = Store::load(dir.path().join("data"), None);
+    let (store, _, _) = Store::load(dir.path().join("data"));
     assert_eq!(
         std::fs::metadata(store.dir.join("state.json"))
             .unwrap()

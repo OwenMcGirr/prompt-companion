@@ -1,62 +1,25 @@
-# Tauri preview validation — 6 September 2026
+# Validation status — 6 September 2026
 
-This is a preview alongside the working Swift app. Build success alone does not establish cross-platform live compatibility or safe global insertion.
+Prompt Companion targets macOS 14+ on Apple Silicon and Intel, and Windows 11 x64. Build success alone does not establish live Codex compatibility or universal insertion support.
 
-## Verified locally on Apple Silicon
+## Local Apple Silicon checks
 
-- 44 deterministic Rust tests: Unicode/UTF-16, partial words, selections, context filtering and budgets, stale results, hover freeze, clarification/expansion, Undo, task switching, copy success/failure, lifecycle detection, migration, private atomic storage, edits while reconnecting, and recovery from context-read failures.
-- Eight React interaction tests: selection action/focus, optimistic editing, IME composition, copy failure/success, clarification controls, active-task controls, long labels, and Settings.
-- Both opt-in live Codex tests pass using the existing ChatGPT sign-in. Synthetic phrases included “fix the missing-user guard” and “fix the login handler crash.”
-- Reviewed expansion outputs: “bigger buttons same layout” retained the vertical arrangement; “why slow” remained a question; “fix it” offered two meaningful choices and accepted one interpretation; “copy clear but no push” preserved clear-after-copy, Undo, and “Do not push the change.”
-- Native Mac preview opens, migrates the selected task, connects, and generates suggestions. Real clicks verified phrase insertion restores draft focus, Copy Prompt clears the draft, and Undo restores it. A real expansion and single-step Undo, active-task pause, per-task draft restoration, and live light/dark switching were also checked. Settings and 32-point composer text remained readable; the original appearance and preferences were restored.
+- Deterministic Rust coverage includes UTF-16 editing, Unicode and selections, context limits, stale-result rejection, activity pausing, phrase generation, expansion and clarification, Undo, task isolation, atomic private storage, copy failure, paste completion, and process cleanup.
+- React interaction coverage includes optimistic editing, IME composition, left-click selection, draft focus, keyboard navigation, mouse-responsive refreshing, clarification, active-task controls, large labels, Settings, and paste-action state.
+- Frontend build, Rust formatting, Rust tests, and feature-enabled Clippy have passed locally. The macOS application bundle builds and opens.
+- Live generation has been checked with synthetic context through an existing Codex ChatGPT session. Generated wording still requires human review.
+- The composer has been inspected in light and dark appearance with large text and button settings.
 
-## Windows protocol smoke check
+## Platform status
 
-The official Codex 0.153.4 x64 executable was run under Windows 11 ARM64 x64 emulation with a fresh, isolated Codex home. `initialize` returned the Windows platform and home path, `model/list` returned 11 models, and `account/read` correctly returned no account and required authentication. The subprocess was stopped after the check. This verifies basic JSON-RPC/catalog responses only: no credentials were copied, no generation was attempted, and it is not native x64 acceptance.
+The CI workflow runs frontend checks, Rust tests, formatting, Clippy, universal macOS packaging, and a Windows x64 installer build. macOS Intel execution and signed/notarized distribution have not been validated. Windows protocol startup has been smoke-tested, but live generation and interactive Windows acceptance still require a signed-in native Windows 11 x64 environment.
 
-## Insertion acceptance gate
+## Codex paste status
 
-| Target/method | Current result |
-| --- | --- |
-| Copy Prompt on macOS | Verified in the native preview; remains the supported workflow. |
-| macOS native selected-text setter | Development adapter compiled. Actual permission-denied test refused capture and kept both insertion buttons disabled. No write was attempted; permission was not granted. Not approved for release. |
-| macOS clipboard paste | Development adapter implemented; not approved for release. Only supported plain-text clipboard formats are eligible. |
-| Windows UIA native setter | Rejected by design where no selection-replacement operation exists; no destructive whole-field fallback. |
-| Windows clipboard paste | Development adapter implemented; native evaluation pending. Refuses unsupported/ambiguous fields and verifies the target. |
-| Codex on either platform | No insertion approval. Agent UI tooling excludes Codex; user-assisted testing is required. |
+The user reported a successful **Paste on next field click** trial in the Codex draft. The app validates the clicked editable field, selection, surrounding text, focus, draft revision, and selected task; every arm is single-use and expires after 30 seconds. It never presses Enter or retries automatically.
 
-Before enabling any destination: exercise empty and existing text, selected ranges, multiline text, emoji, rapid clicks, focus changes, closed windows, read-only/password fields, permission denial/revocation, clipboard formats, and destination Undo. Repeat each successful case and require no wrong-target writes, duplication, unrelated changes, or automatic submission. An uncertain write is never retried automatically. No universal insertion claim is made.
+Native Accessibility selected-text replacement returned success without visible text and is not exposed in the normal interface. Clipboard paste is the macOS action. Codex can accept a paste while its accessibility value fails post-write verification, so such attempts remain “uncertain” and retain the companion draft. A verified paste clears only the unchanged matching draft; Undo restores it.
 
-## Outstanding platform acceptance
+Repeated trials are still required for empty/existing text, selections, multiline text, emoji, rapid clicks, focus changes, closed windows, protected/read-only fields, permission denial/revocation, clipboard formats, and destination Undo. Acceptance requires zero wrong-target writes, duplicates, surrounding-text changes, or submissions.
 
-Windows live Codex integration and interactive Windows app testing, Intel Mac execution, and the insertion matrix remain subject to native validation. The available local Windows VM is ARM64 and has no Codex installation/sign-in, so it cannot establish Windows 11 x64 live acceptance. CI is configured for Windows x64 and universal macOS packaging, deterministic tests, frontend tests, and prototype compilation. Signing/notarization credentials have not been introduced. The Swift release remains available while acceptance is completed.
-
-## User-operated Codex test mode
-
-Accessibility permission was subsequently granted by the user and recognized by the Mac development build. A session-only, explicit Codex opt-in is now available in the development UI. Capture is armed by a click, freezes at one eligible field, and each attempt consumes a Rust-owned token before calling the adapter. Queued captures or clicks cannot automatically repeat an uncertain attempt or switch methods. The UI also suppresses concurrent requests and clears its target after an IPC failure.
-
-Three Rust controller tests and four additional frontend tests cover default-off behavior, mode changes, stale/disabled attempts, uncertain results, rapid clicks, IPC failure, and the platform gate. These use fake adapters/IPC and make no external-field writes. [Manual instructions](MANUAL_INSERTION_TESTS.md) prepare a disposable Codex trial. No successful Codex insertion or Undo result has been reported yet; permission and test-mode readiness do not constitute acceptance. The default build still excludes native insertion.
-
-The first user-operated Codex trial was blocked before capture by stale Accessibility authorization after rebuilding the ad-hoc-signed app. Its approval was reset for the preview identifier and the exact rebuilt bundle re-added in System Settings; the running app then passed its permission check. No insertion was attempted during this repair. Native capture now polls while armed without relying on web-view focus; a regression test covers a web view that continues reporting focus after an OS focus change. All 13 frontend tests pass. Codex field capture and insertion still require a user-operated result.
-
-## Next-click insertion experiment
-
-A user-operated capture subsequently identified Codex (displayed as ChatGPT), confirming permission and field discovery. No successful insertion or destination Undo has been established. The macOS development build now offers an explicit next-field-click action that captures and attempts insertion while the clicked destination is still active. A temporary left-mouse-up monitor, hit-test/focused-field comparison, draft snapshot validation, 30-second expiry and one-use attempt protect this route. Passive capture never triggers insertion. Default packages still exclude this experiment; Windows next-click mode is unavailable.
-
-## Main paste action — 2026-09-06
-
-The user reported that native insertion produced no text, then explicitly tried **Paste on next field click** and reported “That works.” At the user's request, clipboard paste is now the main macOS action in normal builds. The draft remains intact; Copy remains under “Copy instead.” Windows stays on Copy. Earlier development-only descriptions above are historical.
-
-Added protection against stale revisions/tasks, duplicate arm requests, second external clicks before dispatch, changed focus after clipboard preparation, and partial keyboard-event allocation. Composer actions cancel pending attempts. No automatic retry or native fallback. Verification failures after dispatch are always reported as uncertain, including inaccessible/closed fields.
-
-The reported successful trial does not establish repeated reliability, destination Undo, selection/emoji/multiline behavior, or permission denial/revocation coverage. These remain user-operated Codex checks. Accessibility authorization can be invalidated by ad-hoc rebuilds; stable distribution signing remains outstanding.
-
-The running app still displayed an uncertain verification result after the user-reported successful clipboard paste. Therefore automatic post-paste verification has not been established for Codex; the app preserves the draft and reports uncertainty rather than claiming success.
-
-Local verification for this change: 52 Rust tests passed (two opt-in live-generation tests skipped), 18 frontend tests passed, TypeScript/Vite build passed, and feature-enabled Clippy passed with warnings denied. The normal macOS app bundle built and was opened. CUA verified the main paste button, disabled-empty state, readable dark appearance, and left-click access to the secondary Copy control. The rebuilt bundle was re-added to Accessibility and its toggle verified on. No agent-operated Codex insertion was performed. Windows CI and additional user-operated Codex trials remain separate evidence.
-
-## Clear after confirmed paste — 2026-09-06
-
-Confirmed native-adapter completion now sends an internal Rust completion event. The composer clears only when the original draft text, revision, and selected task still match. The clear is saved, Undo restores the draft/selection, and destination focus is retained. Failed, rejected, and uncertain attempts send no completion event and keep the draft. Existing Codex verification uncertainty remains a limitation: a visually successful but unverified paste does not clear automatically.
-
-Local checks: 54 Rust tests and 23 frontend tests passed; Clippy passed with warnings denied. Added coverage for completion clearing, Undo, retained focus, duplicate completion, newer edits, and another task. Live Codex verification remains user-operated.
+Windows retains Copy Prompt because its insertion workflow has not completed live validation. Development-only adapters remain feature-gated for diagnostic work.
