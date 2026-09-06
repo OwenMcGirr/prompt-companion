@@ -418,7 +418,7 @@ impl TextInsertionService for Mac {
         let end = crate::core::byte_offset(&before, (range.location + range.length) as usize);
         let expected = format!("{}{}{}", &before[..start], value, &before[end..]);
         let clicked_point = self.clicked_point.take();
-        for _ in 0..50 {
+        for _ in 0..15 {
             if let Ok(current) = focused() {
                 let mut pid = 0;
                 let same_pid =
@@ -448,7 +448,18 @@ impl TextInsertionService for Mac {
                     }
                 }
             }
-            std::thread::sleep(Duration::from_millis(20));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if clipboard {
+            // CGEventPost has no delivery acknowledgement. At this point both
+            // paste key events were posted only after the destination, focus,
+            // selection, surrounding text, and clipboard were validated. Codex
+            // can perform the paste without updating either AXValue or
+            // AXSelectedTextRange, so those attributes cannot gate clearing.
+            return Ok(
+                "Paste command completed for Codex. Clearing the unchanged draft. Nothing was sent."
+                    .into(),
+            );
         }
         Err(
             "Insertion outcome uncertain. Draft kept; inspect the destination. No retry was made."

@@ -62,7 +62,7 @@ Bundles are written below `desktop/src-tauri/target/release/bundle`, or the corr
 1. Select a Codex task with the context button. This is the conversation used to generate relevant wording.
 2. Type in the draft or left-click a suggested phrase. A phrase inserts at the cursor or replaces the selection, then focus returns to the draft.
 3. Click **Expand** to turn shorthand into a fuller prompt. Review the result, resolve one clarification if offered, or use **Keep original**.
-4. On macOS, click **Paste on next field click**, then click the Codex draft within 30 seconds. Prompt Companion never presses Enter or sends the prompt. A confirmed paste clears the unchanged companion draft; Undo restores it. Failed or uncertain pastes keep it.
+4. On macOS, click **Paste on next field click**, then click the Codex draft within 30 seconds. Prompt Companion never presses Enter or sends the prompt. After the paste command completes for the validated field, it clears the unchanged companion draft; Undo restores it. Failures before the paste command keep the draft.
 5. On Windows, use **Copy Prompt** and paste into Codex yourself. On macOS, the same fallback is under **Copy instead**. Successful copying clears the draft and Undo restores it.
 
 Drafts are saved separately for each selected task. Settings controls text size, suggestion-button height, automatic suggestions, and whether the window stays above other apps. Both appearances follow the system theme.
@@ -75,7 +75,7 @@ Mouse movement does not pause suggestion refreshing. To use the keyboard, press 
 
 The macOS paste action requires Accessibility permission in **System Settings → Privacy & Security → Accessibility**. It listens for one external left click only while armed, verifies that the clicked control is the Codex editable field, and performs one clipboard paste. It expires after 30 seconds and never retries automatically.
 
-The clipboard must contain only supported plain-text formats; unsupported formats are left unchanged. Prompt Companion checks the field, selection, surrounding text, and focus before pasting. Afterward it reacquires the focused Codex field and verifies its process, window, clicked control, expected cursor position, and either the updated text or Codex's known stale pre-paste value. It clears the companion draft only when that verification succeeds and the original draft, revision, and selected task still match. If verification is uncertain, inspect Codex before trying again.
+The clipboard must contain only supported plain-text formats; unsupported formats are left unchanged. Prompt Companion checks the field, selection, surrounding text, and focus immediately before posting Cmd+V. It clears only after both paste key events have been posted and the original draft, revision, and selected task still match. Codex does not reliably expose post-paste text or cursor changes through Accessibility, so the app cannot independently prove that Codex rendered the text. Undo remains available if delivery is blocked after the command is posted.
 
 Unsigned Mac rebuilds can invalidate Accessibility authorization even if an old Settings toggle remains visible. Re-authorize the exact rebuilt bundle when this happens.
 
@@ -120,7 +120,7 @@ See [desktop/VALIDATION.md](desktop/VALIDATION.md) for measured platform and int
 | Wrong context | Open the task picker and explicitly select the intended local task. |
 | Suggestions are paused | Check whether the selected task is active and whether automatic suggestions are enabled. |
 | Paste cannot arm on macOS | Grant Accessibility permission to the exact running application bundle. |
-| Paste outcome is uncertain | Inspect the Codex draft before taking another action; Prompt Companion intentionally does not retry. |
+| Paste does not appear | Use Undo in Prompt Companion to restore the cleared draft. Check Accessibility permission and try a fresh single-use paste; the app never retries automatically. |
 
 Report reproducible problems through [GitHub Issues](https://github.com/OwenMcGirr/prompt-companion/issues). Include platform, architecture, Codex version, steps, expected behavior, and actual behavior. Use synthetic examples and remove account details, private task IDs, drafts, and conversation history.
 

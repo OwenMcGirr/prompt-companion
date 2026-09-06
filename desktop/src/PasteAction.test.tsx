@@ -104,3 +104,10 @@ it("retains Copy as the primary action on unsupported platforms", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Copy Prompt" }));
   expect(onCopy).toHaveBeenCalledOnce();
 });
+
+it("explains that clearing follows the validated paste command", async () => {
+  render(<PasteAction {...props} call={vi.fn().mockResolvedValue(status)} />);
+  expect(
+    await screen.findByText(/Clears after the validated paste command/),
+  ).toBeTruthy();
+});
