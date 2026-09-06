@@ -1,0 +1,14 @@
+{
+  "identifier": "composer",
+  "description": "Only the local composer can send typed actions and read its view state.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-action",
+    "allow-snapshot",
+    "allow-insertion-probe",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

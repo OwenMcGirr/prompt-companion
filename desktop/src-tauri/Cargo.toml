@@ -1,0 +1,36 @@
+[package]
+name = "prompt-companion-preview"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "companion"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+insertion-prototype = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "time", "sync", "rt-multi-thread", "macros"] }
+arboard = { version = "3", default-features = false }
+dirs = "6"
+tempfile = "3"
+unicode-segmentation = "1"
+unicode-normalization = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Accessibility", "Win32_System_Com", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_DataExchange"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSPasteboard", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray"] }

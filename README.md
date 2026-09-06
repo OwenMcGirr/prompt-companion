@@ -1,5 +1,7 @@
 # Prompt Companion
 
+**Rust/Tauri preview:** A new macOS-and-Windows composer is available in [`desktop`](desktop/README.md), with React/TypeScript UI, a Rust backend, separate preview storage, and one-time Mac draft import. See its [build instructions](desktop/README.md#build-run-and-test) and [validation status](desktop/VALIDATION.md). Direct insertion remains a disabled development experiment. The Swift app documented below remains available during preview acceptance.
+
 A native macOS app that helps you write Codex prompts with less typing. Choose a task, type a few words, and click useful phrase suggestions—or expand shorthand into a fuller, editable prompt using that task’s conversation.
 
 Designed around large buttons and ordinary left clicks, including for people who use head-controlled pointing. Speech is not required.

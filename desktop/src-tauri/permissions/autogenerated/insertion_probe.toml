@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-insertion-probe"
+description = "Enables the insertion_probe command without any pre-configured scope."
+commands.allow = ["insertion_probe"]
+
+[[permission]]
+identifier = "deny-insertion-probe"
+description = "Denies the insertion_probe command without any pre-configured scope."
+commands.deny = ["insertion_probe"]

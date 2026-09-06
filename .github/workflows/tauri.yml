@@ -1,0 +1,58 @@
+name: Tauri preview
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tauri-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features insertion-prototype --locked -- -D warnings
+      - name: Add macOS architectures
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build macOS universal preview
+        if: runner.os == 'macOS'
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked
+      - name: Build Windows x64 installer
+        if: runner.os == 'Windows'
+        run: npm run tauri -- build --bundles nsis -- --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prompt-companion-preview-${{ runner.os }}
+          path: |
+            desktop/src-tauri/target/**/bundle/macos/*.app/**
+            desktop/src-tauri/target/**/bundle/nsis/*.exe
+          if-no-files-found: error
