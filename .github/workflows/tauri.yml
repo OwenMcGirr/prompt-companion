@@ -46,6 +46,9 @@ jobs:
       - name: Build macOS universal preview
         if: runner.os == 'macOS'
         run: npm run tauri -- build --target universal-apple-darwin --bundles app -- --locked
+      - name: Archive macOS bundle preserving permissions
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/universal-apple-darwin/release/bundle/macos/Prompt Companion Preview.app" "Prompt-Companion-Preview-macOS-universal.zip"
       - name: Build Windows x64 installer
         if: runner.os == 'Windows'
         run: npm run tauri -- build --bundles nsis -- --locked
@@ -53,6 +56,6 @@ jobs:
         with:
           name: prompt-companion-preview-${{ runner.os }}
           path: |
-            desktop/src-tauri/target/**/bundle/macos/*.app/**
+            desktop/Prompt-Companion-Preview-macOS-universal.zip
             desktop/src-tauri/target/**/bundle/nsis/*.exe
           if-no-files-found: error

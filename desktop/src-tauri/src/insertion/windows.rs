@@ -72,8 +72,7 @@ fn content(e: &IUIAutomationElement) -> Result<(String, usize, usize), String> {
         let end = start + crate::core::utf16(&selected.GetText(-1).map_err(err)?.to_string());
         let text = document.GetText(-1).map_err(err)?.to_string();
         // Different text/value representations cannot be verified safely.
-        if value.CurrentValue().map_err(err)?.to_string() != text || end > crate::core::utf16(&text)
-        {
+        if value.CurrentValue().map_err(err)? != text || end > crate::core::utf16(&text) {
             return Err("Incompatible text and selection representations.".into());
         }
         Ok((text, start, end))
