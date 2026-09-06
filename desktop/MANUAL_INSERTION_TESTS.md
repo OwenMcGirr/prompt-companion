@@ -31,3 +31,7 @@ No screenshot or conversation text is necessary. Report:
 Passing the first trial is not release approval. Repeat native and clipboard trials separately for empty fields; cursor at start/middle/end; selected ranges; multiline text; emoji; destination text/selection changes after capture; other windows; closed/restarted destinations; protected, read-only and disabled fields; denied/revoked permission; clipboard contention/formats; rapid repeated clicks; and interrupted/uncertain attempts. Refusal cases must cause no write. Each successful case must preserve normal destination Undo.
 
 Proposed threshold: 20 successful repetitions per insertion case plus repeated race/refusal trials, with zero wrong-target writes, duplicate insertions, unintended surrounding-text changes, or submissions. Record operating system, app version, method, case, trial count and outcome. Keep content disposable. No Codex trial has passed yet; Windows manual Codex mode is not enabled by this change.
+
+## If permission still fails after a rebuild
+
+Ad-hoc development builds can invalidate their previous Accessibility authorization even when Settings shows the switch on. Quit the development app, reset only its stale approval with `tccutil reset Accessibility com.owenmcgirr.prompt-companion.preview`, then add the exact rebuilt `.app` using the plus button in Privacy & Security → Accessibility. Relaunch that same bundle. Do not rebuild between granting permission and testing. No other application's permissions need to change.

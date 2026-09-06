@@ -99,3 +99,20 @@ it("hides the Codex option on unsupported platforms", async () => {
   await screen.findByRole("heading", { name: "Manual insertion test" });
   expect(screen.queryByRole("checkbox", { name: /Include Codex/ })).toBeNull();
 });
+
+it("polls an armed native capture even when web-view focus remains true", async () => {
+  const focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce({ ...base, enabled: true, armed: true })
+    .mockResolvedValue({
+      ...base,
+      enabled: true,
+      armed: false,
+      destination: "TextEdit",
+    });
+  render(<InsertionProbe text="TEST" call={call} />);
+  await waitFor(() => expect(call).toHaveBeenCalledWith({ kind: "capture" }));
+  expect(focused).not.toHaveBeenCalled();
+  focused.mockRestore();
+});

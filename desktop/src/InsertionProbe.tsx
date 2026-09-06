@@ -53,7 +53,9 @@ export default function InsertionProbe({
   useEffect(() => {
     if (!status?.enabled || !status.armed) return;
     const timer = setInterval(() => {
-      if (!document.hasFocus()) void request({ kind: "capture" });
+      // Native capture ignores our own process. Web-view focus can remain true
+      // after the OS activates another app, so it must not gate native capture.
+      void request({ kind: "capture" });
     }, 200);
     return () => clearInterval(timer);
   }, [status?.enabled, status?.armed]);
