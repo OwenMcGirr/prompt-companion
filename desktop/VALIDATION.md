@@ -18,7 +18,7 @@ The CI workflow runs frontend checks, Rust tests, formatting, Clippy, universal 
 
 The user reported a successful **Paste on next field click** trial in the Codex draft. The app validates the clicked editable field, selection, surrounding text, focus, draft revision, and selected task; every arm is single-use and expires after 30 seconds. It never presses Enter or retries automatically.
 
-Native Accessibility selected-text replacement returned success without visible text and is not exposed in the normal interface. Clipboard paste is the macOS action. Codex can accept a paste while its accessibility value fails post-write verification, so such attempts remain “uncertain” and retain the companion draft. A verified paste clears only the unchanged matching draft; Undo restores it.
+Native Accessibility selected-text replacement returned success without visible text and is not exposed in the normal interface. Clipboard paste is the macOS action. Codex can accept a paste while the original accessibility object remains stale. Verification now reacquires the focused field for the same process, window, and clicked control, and requires the expected post-paste cursor position. It accepts either the expected updated text or the known stale pre-paste value; any unrelated value remains uncertain. A verified paste clears only the unchanged matching draft; Undo restores it.
 
 Repeated trials are still required for empty/existing text, selections, multiline text, emoji, rapid clicks, focus changes, closed windows, protected/read-only fields, permission denial/revocation, clipboard formats, and destination Undo. Acceptance requires zero wrong-target writes, duplicates, surrounding-text changes, or submissions.
 

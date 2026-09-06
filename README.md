@@ -75,7 +75,7 @@ Mouse movement does not pause suggestion refreshing. To use the keyboard, press 
 
 The macOS paste action requires Accessibility permission in **System Settings → Privacy & Security → Accessibility**. It listens for one external left click only while armed, verifies that the clicked control is the Codex editable field, and performs one clipboard paste. It expires after 30 seconds and never retries automatically.
 
-The clipboard must contain only supported plain-text formats; unsupported formats are left unchanged. Prompt Companion checks the field, selection, surrounding text, and focus before pasting. It clears the companion draft only after the resulting destination text is verified and the original draft, revision, and selected task still match. If verification is uncertain, inspect Codex before trying again.
+The clipboard must contain only supported plain-text formats; unsupported formats are left unchanged. Prompt Companion checks the field, selection, surrounding text, and focus before pasting. Afterward it reacquires the focused Codex field and verifies its process, window, clicked control, expected cursor position, and either the updated text or Codex's known stale pre-paste value. It clears the companion draft only when that verification succeeds and the original draft, revision, and selected task still match. If verification is uncertain, inspect Codex before trying again.
 
 Unsigned Mac rebuilds can invalidate Accessibility authorization even if an old Settings toggle remains visible. Re-authorize the exact rebuilt bundle when this happens.
 

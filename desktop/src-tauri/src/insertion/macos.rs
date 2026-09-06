@@ -117,6 +117,7 @@ pub struct Mac {
     target: Option<Target>,
     manual_codex: bool,
     clicked_target: bool,
+    clicked_point: Option<(f64, f64)>,
 }
 impl Mac {
     pub fn new(manual_codex: bool) -> Self {
@@ -124,6 +125,7 @@ impl Mac {
             target: None,
             manual_codex,
             clicked_target: false,
+            clicked_point: None,
         }
     }
 }
@@ -138,6 +140,42 @@ fn focused() -> Result<Object, String> {
         AXUIElementSetMessagingTimeout(system.0, 0.4);
     }
     attr(system.0, "AXFocusedUIElement")
+}
+fn hit_belongs_to(element: Ref, x: f64, y: f64) -> bool {
+    let system = Object(unsafe { AXUIElementCreateSystemWide() });
+    let mut hit = ptr::null();
+    if unsafe { AXUIElementCopyElementAtPosition(system.0, x as f32, y as f32, &mut hit) } != 0
+        || hit.is_null()
+    {
+        return false;
+    }
+    let mut hit = Object(hit);
+    for _ in 0..12 {
+        if unsafe { CFEqual(hit.0, element) } {
+            return true;
+        }
+        match attr(hit.0, "AXParent") {
+            Ok(parent) => hit = parent,
+            Err(_) => break,
+        }
+    }
+    false
+}
+fn expected_cursor(range: Range, inserted: &str) -> Range {
+    Range {
+        location: range.location + crate::core::utf16(inserted) as isize,
+        length: 0,
+    }
+}
+fn confirms_paste(
+    before: &str,
+    expected: &str,
+    range: Range,
+    inserted: &str,
+    value: &str,
+    observed: Range,
+) -> bool {
+    observed == expected_cursor(range, inserted) && (value == expected || value == before)
 }
 impl TextInsertionService for Mac {
     fn destination(&self) -> Option<String> {
@@ -170,26 +208,12 @@ impl TextInsertionService for Mac {
                 );
             }
         }
-        let system = Object(unsafe { AXUIElementCreateSystemWide() });
-        let mut hit = ptr::null();
-        if unsafe { AXUIElementCopyElementAtPosition(system.0, x as f32, y as f32, &mut hit) } != 0
-            || hit.is_null()
-        {
-            self.target = None;
-            return Err("Cannot identify the clicked field. Nothing was inserted.".into());
-        }
-        let mut hit = Object(hit);
         // A click on text inside the focused editor is valid. A click on its
         // window, toolbar, another editor, or scrollbar is never sufficient.
-        for _ in 0..12 {
-            if unsafe { CFEqual(hit.0, target.element.0) } {
-                self.clicked_target = true;
-                return Ok(());
-            }
-            match attr(hit.0, "AXParent") {
-                Ok(parent) => hit = parent,
-                Err(_) => break,
-            }
+        if hit_belongs_to(target.element.0, x, y) {
+            self.clicked_target = true;
+            self.clicked_point = Some((x, y));
+            return Ok(());
         }
         self.target = None;
         Err(
@@ -199,6 +223,7 @@ impl TextInsertionService for Mac {
     }
     fn capture(&mut self) -> Result<(), String> {
         self.clicked_target = false;
+        self.clicked_point = None;
         let element = focused()?;
         let mut pid = 0;
         if unsafe { AXUIElementGetPid(element.0, &mut pid) } != 0 {
@@ -345,19 +370,117 @@ impl TextInsertionService for Mac {
         let start = crate::core::byte_offset(&before, range.location as usize);
         let end = crate::core::byte_offset(&before, (range.location + range.length) as usize);
         let expected = format!("{}{}{}", &before[..start], value, &before[end..]);
-        for _ in 0..30 {
-            if attr(t.element.0, "AXValue")
-                .and_then(|v| text(v.0))
-                .is_ok_and(|v| v == expected)
-            {
-                return Ok("Pasted into Codex. Your draft is kept. Nothing was sent.".into());
+        let clicked_point = self.clicked_point.take();
+        for _ in 0..50 {
+            if let Ok(current) = focused() {
+                let mut pid = 0;
+                let same_pid =
+                    unsafe { AXUIElementGetPid(current.0, &mut pid) } == 0 && pid == t.pid;
+                let same_window = attr(current.0, "AXWindow")
+                    .is_ok_and(|window| unsafe { CFEqual(window.0, t.window.0) });
+                let same_clicked_field =
+                    clicked_point.is_none_or(|(x, y)| hit_belongs_to(current.0, x, y));
+                if same_pid && same_window && same_clicked_field {
+                    if let (Ok(current_value), Ok(current_range)) = (
+                        attr(current.0, "AXValue").and_then(|v| text(v.0)),
+                        selection(current.0),
+                    ) {
+                        if confirms_paste(
+                            &before,
+                            &expected,
+                            range,
+                            value,
+                            &current_value,
+                            current_range,
+                        ) {
+                            return Ok(
+                                "Paste verified in Codex. Clearing the unchanged draft. Nothing was sent."
+                                    .into(),
+                            );
+                        }
+                    }
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(20));
         }
         Err(
             "Insertion outcome uncertain. Draft kept; inspect the destination. No retry was made."
                 .into(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn confirms_updated_text_and_expected_cursor() {
+        let before = "LEFT RIGHT";
+        let range = Range {
+            location: 5,
+            length: 1,
+        };
+        assert!(confirms_paste(
+            before,
+            "LEFTTEST RIGHT",
+            range,
+            "TEST",
+            "LEFTTEST RIGHT",
+            Range {
+                location: 9,
+                length: 0,
+            },
+        ));
+    }
+
+    #[test]
+    fn confirms_expected_cursor_when_codex_value_is_stale() {
+        let range = Range {
+            location: 0,
+            length: 0,
+        };
+        assert!(confirms_paste(
+            "",
+            "hello 😀",
+            range,
+            "hello 😀",
+            "",
+            Range {
+                location: 8,
+                length: 0,
+            },
+        ));
+    }
+
+    #[test]
+    fn rejects_wrong_cursor_or_unexpected_text() {
+        let range = Range {
+            location: 2,
+            length: 0,
+        };
+        assert!(!confirms_paste(
+            "abcd",
+            "abXcd",
+            range,
+            "X",
+            "abXcd",
+            Range {
+                location: 2,
+                length: 0,
+            },
+        ));
+        assert!(!confirms_paste(
+            "abcd",
+            "abXcd",
+            range,
+            "X",
+            "changed",
+            Range {
+                location: 3,
+                length: 0,
+            },
+        ));
     }
 }
 
