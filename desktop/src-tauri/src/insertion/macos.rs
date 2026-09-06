@@ -8,9 +8,30 @@ use std::cell::{Cell, RefCell};
 use std::{ffi::c_void, ptr, time::Duration};
 type Ref = *const c_void;
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct Point {
     x: f64,
     y: f64,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Size {
+    width: f64,
+    height: f64,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Rect {
+    origin: Point,
+    size: Size,
+}
+impl Rect {
+    fn contains(self, x: f64, y: f64) -> bool {
+        x >= self.origin.x
+            && x <= self.origin.x + self.size.width
+            && y >= self.origin.y
+            && y <= self.origin.y + self.size.height
+    }
 }
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -161,6 +182,32 @@ fn hit_belongs_to(element: Ref, x: f64, y: f64) -> bool {
     }
     false
 }
+fn frame_contains(element: Ref, x: f64, y: f64) -> bool {
+    let Ok(value) = attr(element, "AXFrame") else {
+        return false;
+    };
+    let mut frame = Rect {
+        origin: Point { x: 0., y: 0. },
+        size: Size {
+            width: 0.,
+            height: 0.,
+        },
+    };
+    if !unsafe { AXValueGetValue(value.0, 3, &mut frame as *mut _ as *mut c_void) }
+        || !frame.origin.x.is_finite()
+        || !frame.origin.y.is_finite()
+        || !frame.size.width.is_finite()
+        || !frame.size.height.is_finite()
+        || frame.size.width <= 0.
+        || frame.size.height <= 0.
+    {
+        return false;
+    }
+    frame.contains(x, y)
+}
+fn click_matches_field(element: Ref, x: f64, y: f64) -> bool {
+    hit_belongs_to(element, x, y) || frame_contains(element, x, y)
+}
 fn expected_cursor(range: Range, inserted: &str) -> Range {
     Range {
         location: range.location + crate::core::utf16(inserted) as isize,
@@ -210,7 +257,7 @@ impl TextInsertionService for Mac {
         }
         // A click on text inside the focused editor is valid. A click on its
         // window, toolbar, another editor, or scrollbar is never sufficient.
-        if hit_belongs_to(target.element.0, x, y) {
+        if click_matches_field(target.element.0, x, y) {
             self.clicked_target = true;
             self.clicked_point = Some((x, y));
             return Ok(());
@@ -379,7 +426,7 @@ impl TextInsertionService for Mac {
                 let same_window = attr(current.0, "AXWindow")
                     .is_ok_and(|window| unsafe { CFEqual(window.0, t.window.0) });
                 let same_clicked_field =
-                    clicked_point.is_none_or(|(x, y)| hit_belongs_to(current.0, x, y));
+                    clicked_point.is_none_or(|(x, y)| click_matches_field(current.0, x, y));
                 if same_pid && same_window && same_clicked_field {
                     if let (Ok(current_value), Ok(current_range)) = (
                         attr(current.0, "AXValue").and_then(|v| text(v.0)),
@@ -481,6 +528,22 @@ mod tests {
                 length: 0,
             },
         ));
+    }
+
+    #[test]
+    fn rectangle_check_accepts_edges_and_rejects_other_controls() {
+        let frame = Rect {
+            origin: Point { x: 100., y: 200. },
+            size: Size {
+                width: 300.,
+                height: 80.,
+            },
+        };
+        assert!(frame.contains(100., 200.));
+        assert!(frame.contains(250., 240.));
+        assert!(frame.contains(400., 280.));
+        assert!(!frame.contains(99., 240.));
+        assert!(!frame.contains(250., 281.));
     }
 }
 

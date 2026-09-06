@@ -22,4 +22,6 @@ Native Accessibility selected-text replacement returned success without visible 
 
 Repeated trials are still required for empty/existing text, selections, multiline text, emoji, rapid clicks, focus changes, closed windows, protected/read-only fields, permission denial/revocation, clipboard formats, and destination Undo. Acceptance requires zero wrong-target writes, duplicates, surrounding-text changes, or submissions.
 
+A subsequent Codex trial was rejected before paste because Codex exposed the clicked node beside or above the focused editor instead of beneath it. Click validation now also accepts a point inside the exact focused editor's accessibility frame; the process, window, editable-field checks, and post-paste revalidation still apply. It does not broaden acceptance to the surrounding window.
+
 Windows retains Copy Prompt because its insertion workflow has not completed live validation. Development-only adapters remain feature-gated for diagnostic work.
