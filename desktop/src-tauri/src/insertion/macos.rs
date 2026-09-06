@@ -103,6 +103,15 @@ struct Target {
 #[derive(Default)]
 pub struct Mac {
     target: Option<Target>,
+    manual_codex: bool,
+}
+impl Mac {
+    pub fn new(manual_codex: bool) -> Self {
+        Self {
+            target: None,
+            manual_codex,
+        }
+    }
 }
 fn focused() -> Result<Object, String> {
     if !unsafe { AXIsProcessTrusted() } {
@@ -118,7 +127,12 @@ fn focused() -> Result<Object, String> {
 }
 impl TextInsertionService for Mac {
     fn destination(&self) -> Option<String> {
-        self.target.as_ref().map(|t| t.name.clone())
+        self.target.as_ref().map(|t| {
+            format!(
+                "{} · cursor {} · selected {} UTF-16 units",
+                t.name, t.range.location, t.range.length
+            )
+        })
     }
     fn capture(&mut self) -> Result<(), String> {
         let element = focused()?;
@@ -136,9 +150,11 @@ impl TextInsertionService for Mac {
             .bundleIdentifier()
             .map(|s| s.to_string())
             .unwrap_or_default();
-        // Restrict agent-driven evaluation to disposable editors. Codex requires
-        // user-assisted validation; do not bypass the automation tool's exclusion.
-        if !["com.apple.TextEdit", "com.google.Chrome"].contains(&bundle.as_str()) {
+        // Codex is opt-in for the person operating the development UI only.
+        // Agents must not use this adapter to bypass Codex UI tool restrictions.
+        let allowed = ["com.apple.TextEdit", "com.google.Chrome"].contains(&bundle.as_str())
+            || (self.manual_codex && bundle == "com.openai.codex");
+        if !allowed {
             return Err(
                 "This destination is outside the development test allowlist. Use Copy Prompt."
                     .into(),

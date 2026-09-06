@@ -325,7 +325,18 @@ export default function App({ bridge = nativeBridge }: { bridge?: Bridge }) {
         <p>{view.contextStatus}</p>
         <p>Copy here, then paste into Codex. Nothing sends automatically.</p>
       </footer>
-      {bridge === nativeBridge && <InsertionProbe text={draft.text} />}
+      {bridge === nativeBridge && (
+        <InsertionProbe
+          text={draft.text}
+          onUseTestText={() => {
+            focusAfter.current = true;
+            send({
+              type: "edit",
+              draft: { text: "TEST ", cursor: 5, selectionLength: 0 },
+            });
+          }}
+        />
+      )}
       <dialog
         ref={modal}
         aria-label={dialog === "tasks" ? "Choose your context" : "Settings"}

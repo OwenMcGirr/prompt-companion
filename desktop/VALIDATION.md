@@ -30,3 +30,9 @@ Before enabling any destination: exercise empty and existing text, selected rang
 ## Outstanding platform acceptance
 
 Windows live Codex integration and interactive Windows app testing, Intel Mac execution, and the insertion matrix remain subject to native validation. The available local Windows VM is ARM64 and has no Codex installation/sign-in, so it cannot establish Windows 11 x64 live acceptance. CI is configured for Windows x64 and universal macOS packaging, deterministic tests, frontend tests, and prototype compilation. Signing/notarization credentials have not been introduced. The Swift release remains available while acceptance is completed.
+
+## User-operated Codex test mode
+
+Accessibility permission was subsequently granted by the user and recognized by the Mac development build. A session-only, explicit Codex opt-in is now available in the development UI. Capture is armed by a click, freezes at one eligible field, and each attempt consumes a Rust-owned token before calling the adapter. Queued captures or clicks cannot automatically repeat an uncertain attempt or switch methods. The UI also suppresses concurrent requests and clears its target after an IPC failure.
+
+Three Rust controller tests and four additional frontend tests cover default-off behavior, mode changes, stale/disabled attempts, uncertain results, rapid clicks, IPC failure, and the platform gate. These use fake adapters/IPC and make no external-field writes. [Manual instructions](MANUAL_INSERTION_TESTS.md) prepare a disposable Codex trial. No successful Codex insertion or Undo result has been reported yet; permission and test-mode readiness do not constitute acceptance. The default build still excludes native insertion.

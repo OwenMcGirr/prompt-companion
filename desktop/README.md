@@ -96,11 +96,11 @@ Direct insertion is **excluded from the default build**. Copy Prompt is the supp
 npm run tauri -- dev --features insertion-prototype
 ```
 
-The development panel starts disabled. Enable external-field detection, focus a disposable text field in TextEdit/Notepad or Chrome, and return to the composer. It displays the remembered destination and explicit native/clipboard insertion buttons. It does not log global keystrokes or provide external text to the model.
+The development panel starts disabled. Enable insertion testing, click **Capture next field**, focus a disposable text field in TextEdit/Notepad or Chrome, and return to the composer. Capture freezes after one eligible field and each attempt consumes its target. It displays the remembered destination and explicit native/clipboard insertion buttons. It does not log global keystrokes or provide external text to the model.
 
 macOS uses Accessibility selected-text replacement where the field advertises support. Windows UI Automation has no universal selected-text setter; this prototype explicitly refuses whole-field ValuePattern replacement and evaluates clipboard paste separately. The clipboard path accepts only supported plain-text formats, explains that the clipboard will be replaced, and does not restore it with a timer. It verifies field identity, selection and content before inserting, verifies the resulting text, consumes the target after an attempt, never presses Enter, never retries an uncertain result, and keeps the draft.
 
-No destination adapter has been approved for release. The test allowlist intentionally excludes Codex; its automation-tool exclusion is not bypassed. Codex requires user-assisted testing before that gate can change. Missing accessibility permission, incompatible fields, ambiguous selection, or unverified focus leaves direct insertion unavailable. See [the measured acceptance matrix](VALIDATION.md).
+No destination adapter has been approved for release. Codex is excluded by default. On macOS, a separate **Include Codex — I will operate the test myself** checkbox permits a session-only manual trial. The person testing must operate and inspect Codex themselves; agents must not use this adapter to bypass Codex automation-tool restrictions. See [the manual test guide](MANUAL_INSERTION_TESTS.md). Missing accessibility permission, incompatible fields, ambiguous selection, or unverified focus leaves direct insertion unavailable. See [the measured acceptance matrix](VALIDATION.md).
 
 ## Architecture
 
